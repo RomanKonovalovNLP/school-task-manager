@@ -1,0 +1,847 @@
+# Архитектура веб-приложения "Таск-менеджер для школ"
+
+## 1. Технологический стек
+
+### Backend
+- **Framework**: NestJS (TypeScript)
+- **База данных**: PostgreSQL
+- **ORM**: TypeORM или Prisma
+- **WebSocket**: Socket.io (для real-time уведомлений)
+- **Валидация**: class-validator, class-transformer
+- **Безопасность**: bcrypt (хеширование паролей школ)
+
+### Frontend
+- **Framework**: React 18+ с TypeScript
+- **State Management**: Redux Toolkit или Zustand
+- **UI библиотека**: Material-UI или Ant Design (адаптивный дизайн)
+- **Real-time**: Socket.io-client
+- **HTTP клиент**: Axios
+- **Роутинг**: React Router v6
+- **Формы**: React Hook Form
+
+### Дополнительно
+- **Контейнеризация**: Docker + Docker Compose
+- **Reverse Proxy**: Nginx
+
+---
+
+## 2. Структура базы данных
+
+### Таблица: schools
+```sql
+CREATE TABLE schools (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+### Таблица: admins
+```sql
+CREATE TABLE admins (
+  id SERIAL PRIMARY KEY,
+  school_id INT NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  full_name VARCHAR(255) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(school_id, full_name)
+);
+```
+
+### Таблица: filter_categories
+```sql
+CREATE TABLE filter_categories (
+  id SERIAL PRIMARY KEY,
+  school_id INT NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  category_name VARCHAR(100) NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(school_id, category_name)
+);
+```
+
+### Таблица: tasks
+```sql
+CREATE TABLE tasks (
+  id SERIAL PRIMARY KEY,
+  school_id INT NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  title VARCHAR(255) NOT NULL,
+  description TEXT,
+  creator_name VARCHAR(255) NOT NULL,
+  deadline TIMESTAMP NOT NULL,
+  is_overdue BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+### Таблица: task_assignees (для множественного назначения)
+```sql
+CREATE TABLE task_assignees (
+  id SERIAL PRIMARY KEY,
+  task_id INT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  assignee_category VARCHAR(100) NOT NULL,
+  UNIQUE(task_id, assignee_category)
+);
+```
+
+### Таблица: task_views (для отслеживания просмотров)
+```sql
+CREATE TABLE task_views (
+  id SERIAL PRIMARY KEY,
+  task_id INT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  viewer_name VARCHAR(255) NOT NULL,
+  viewed_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(task_id, viewer_name)
+);
+```
+
+### Таблица: notifications
+```sql
+CREATE TABLE notifications (
+  id SERIAL PRIMARY KEY,
+  school_id INT NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  recipient_category VARCHAR(100),
+  task_id INT REFERENCES tasks(id) ON DELETE CASCADE,
+  notification_type VARCHAR(50) NOT NULL, -- 'new_task', 'deadline_changed'
+  message TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+### Таблица: task_positions (для сохранения позиций тасок на canvas)
+```sql
+CREATE TABLE task_positions (
+  id SERIAL PRIMARY KEY,
+  task_id INT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_session_id INT NOT NULL REFERENCES user_sessions(id) ON DELETE CASCADE,
+  position_x INT NOT NULL,
+  position_y INT NOT NULL,
+  z_index INT DEFAULT 0,
+  group_id INT, -- для группировки тасок
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(task_id, user_session_id)
+);
+```
+
+### Таблица: task_groups (для групп тасок типа "бутерброд")
+```sql
+CREATE TABLE task_groups (
+  id SERIAL PRIMARY KEY,
+  school_id INT NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  user_session_id INT NOT NULL REFERENCES user_sessions(id) ON DELETE CASCADE,
+  position_x INT NOT NULL,
+  position_y INT NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+```
+```sql
+CREATE TABLE user_sessions (
+  id SERIAL PRIMARY KEY,
+  school_id INT NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  full_name VARCHAR(255) NOT NULL,
+  session_token VARCHAR(255) UNIQUE NOT NULL,
+  is_admin BOOLEAN DEFAULT FALSE,
+  last_active TIMESTAMP DEFAULT NOW(),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+---
+
+## 3. Backend архитектура (NestJS)
+
+### Структура модулей
+
+```
+src/
+├── app.module.ts
+├── main.ts
+├── common/
+│   ├── decorators/
+│   │   └── current-user.decorator.ts
+│   ├── guards/
+│   │   ├── school-auth.guard.ts
+│   │   └── admin.guard.ts
+│   ├── filters/
+│   │   └── http-exception.filter.ts
+│   └── pipes/
+│       └── validation.pipe.ts
+├── modules/
+│   ├── auth/
+│   │   ├── auth.module.ts
+│   │   ├── auth.controller.ts
+│   │   ├── auth.service.ts
+│   │   └── dto/
+│   │       ├── login.dto.ts
+│   │       └── admin-login.dto.ts
+│   ├── schools/
+│   │   ├── schools.module.ts
+│   │   ├── schools.controller.ts
+│   │   ├── schools.service.ts
+│   │   └── entities/
+│   │       └── school.entity.ts
+│   ├── tasks/
+│   │   ├── tasks.module.ts
+│   │   ├── tasks.controller.ts
+│   │   ├── tasks.service.ts
+│   │   ├── tasks.gateway.ts (WebSocket)
+│   │   ├── entities/
+│   │   │   ├── task.entity.ts
+│   │   │   ├── task-assignee.entity.ts
+│   │   │   └── task-view.entity.ts
+│   │   └── dto/
+│   │       ├── create-task.dto.ts
+│   │       ├── update-task.dto.ts
+│   │       └── task-filter.dto.ts
+│   ├── task-positions/
+│   │   ├── task-positions.module.ts
+│   │   ├── task-positions.controller.ts
+│   │   ├── task-positions.service.ts
+│   │   ├── entities/
+│   │   │   ├── task-position.entity.ts
+│   │   │   └── task-group.entity.ts
+│   │   └── dto/
+│   │       ├── update-position.dto.ts
+│   │       └── create-group.dto.ts
+│   ├── filters/
+│   │   ├── filters.module.ts
+│   │   ├── filters.controller.ts
+│   │   ├── filters.service.ts
+│   │   └── entities/
+│   │       └── filter-category.entity.ts
+│   ├── notifications/
+│   │   ├── notifications.module.ts
+│   │   ├── notifications.controller.ts
+│   │   ├── notifications.service.ts
+│   │   ├── notifications.gateway.ts (WebSocket)
+│   │   └── entities/
+│   │       └── notification.entity.ts
+│   └── admins/
+│       ├── admins.module.ts
+│       ├── admins.controller.ts
+│       ├── admins.service.ts
+│       └── entities/
+│           └── admin.entity.ts
+└── config/
+    ├── database.config.ts
+    └── jwt.config.ts
+```
+
+### Ключевые API эндпоинты
+
+#### Auth Module
+- `POST /auth/login` - вход гостя (ФИО + пароль школы)
+- `POST /auth/admin-login` - вход админа (ФИО + пароль админа + пароль школы)
+- `POST /auth/logout` - выход
+- `GET /auth/session` - проверка сессии
+
+#### Tasks Module
+- `GET /tasks` - получение всех тасок школы (с фильтрацией)
+- `GET /tasks/:id` - получение одной таски
+- `POST /tasks` - создание таски
+- `PATCH /tasks/:id` - редактирование таски
+- `DELETE /tasks/:id` - удаление таски
+- `DELETE /tasks/overdue` - удаление всех просроченных (только админы)
+- `POST /tasks/:id/view` - отметка о просмотре таски
+- `GET /tasks/:id/views` - получение списка просмотревших
+
+#### Task Positions Module (новый модуль)
+- `GET /task-positions` - получение всех позиций тасок для пользователя
+- `PATCH /task-positions/:taskId` - обновление позиции таски
+- `POST /task-positions/group` - создание группы тасок
+- `DELETE /task-positions/group/:groupId` - разгруппировка тасок
+- `PATCH /task-positions/group/:groupId/move` - перемещение группы
+- `GET /filters` - получение всех категорий школы
+- `POST /filters` - создание категории (только админы)
+- `DELETE /filters/:id` - удаление категории (только админы)
+
+#### Notifications Module
+- `GET /notifications` - получение уведомлений для пользователя
+- `WS /notifications` - WebSocket для real-time уведомлений
+
+#### Admins Module
+- `GET /admins` - список админов (только для админов)
+- `POST /admins` - создание админа (только для админов)
+
+---
+
+## 4. Frontend архитектура
+
+### Структура компонентов
+
+```
+src/
+├── App.tsx
+├── index.tsx
+├── components/
+│   ├── auth/
+│   │   ├── LoginForm.tsx
+│   │   └── AdminLoginForm.tsx
+│   ├── layout/
+│   │   ├── Header.tsx
+│   │   ├── Sidebar.tsx
+│   │   └── MainLayout.tsx
+│   ├── tasks/
+│   │   ├── TaskCanvas.tsx (основной компонент для Desktop/Tablet)
+│   │   ├── TaskList.tsx (для Mobile)
+│   │   ├── DraggableTask.tsx (компонент таски с drag-and-drop)
+│   │   ├── TaskCard.tsx
+│   │   ├── TaskGroup.tsx (компонент группы тасок "бутерброд")
+│   │   ├── TaskModal.tsx
+│   │   ├── CreateTaskModal.tsx
+│   │   ├── TaskFilters.tsx
+│   │   └── TaskViewersTooltip.tsx
+│   ├── notifications/
+│   │   ├── NotificationBell.tsx
+│   │   └── NotificationList.tsx
+│   ├── filters/
+│   │   ├── CategoryManager.tsx (для админов)
+│   │   └── CategorySelect.tsx
+│   └── common/
+│       ├── Button.tsx
+│       ├── Input.tsx
+│       └── Modal.tsx
+├── pages/
+│   ├── LoginPage.tsx
+│   ├── DashboardPage.tsx
+│   └── NotFoundPage.tsx
+├── hooks/
+│   ├── useAuth.ts
+│   ├── useTasks.ts
+│   ├── useNotifications.ts
+│   ├── useWebSocket.ts
+│   ├── useDragAndDrop.ts (логика drag-and-drop)
+│   └── useTaskPositions.ts (управление позициями тасок)
+├── services/
+│   ├── api.ts
+│   ├── auth.service.ts
+│   ├── tasks.service.ts
+│   ├── filters.service.ts
+│   ├── task-positions.service.ts (новый сервис для позиций)
+│   └── notifications.service.ts
+├── store/
+│   ├── store.ts
+│   ├── slices/
+│   │   ├── authSlice.ts
+│   │   ├── tasksSlice.ts
+│   │   ├── filtersSlice.ts
+│   │   ├── taskPositionsSlice.ts (новый slice)
+│   │   └── notificationsSlice.ts
+│   └── types.ts
+├── utils/
+│   ├── dateHelpers.ts
+│   ├── taskPriorityHelper.ts (расчет цвета по дедлайну)
+│   ├── collisionDetection.ts (определение наложения тасок)
+│   └── storage.ts
+└── styles/
+    └── global.css
+```
+
+### Логика определения цвета таски
+
+```typescript
+// utils/taskPriorityHelper.ts
+export enum TaskPriority {
+  URGENT = 'urgent',      // < 24 часов - красный
+  MEDIUM = 'medium',      // < 72 часов - желтый
+  LOW = 'low',            // > 72 часов - зеленый
+  OVERDUE = 'overdue'     // просрочено - серый
+}
+
+export const getTaskPriority = (deadline: Date): TaskPriority => {
+  const now = new Date();
+  const hoursLeft = (deadline.getTime() - now.getTime()) / (1000 * 60 * 60);
+  
+  if (hoursLeft < 0) return TaskPriority.OVERDUE;
+  if (hoursLeft <= 24) return TaskPriority.URGENT;
+  if (hoursLeft <= 72) return TaskPriority.MEDIUM;
+  return TaskPriority.LOW;
+};
+
+export const getPriorityColor = (priority: TaskPriority): string => {
+  switch (priority) {
+    case TaskPriority.URGENT: return '#FF4444'; // красный
+    case TaskPriority.MEDIUM: return '#FFA500'; // желтый/оранжевый
+    case TaskPriority.LOW: return '#4CAF50';    // зеленый
+    case TaskPriority.OVERDUE: return '#9E9E9E'; // серый
+  }
+};
+```
+
+---
+
+## 5. Логика работы системы
+
+### Процесс входа в систему
+
+1. **Гость:**
+   - Вводит ФИО и пароль школы
+   - Backend проверяет пароль школы
+   - Создается session_token, сохраняется в таблице user_sessions
+   - Frontend сохраняет токен в localStorage
+   - При следующем визите ФИО подставляется автоматически
+
+2. **Админ:**
+   - Вводит ФИО, пароль админа и пароль школы
+   - Backend проверяет оба пароля и наличие в таблице admins
+   - Создается session с флагом is_admin=true
+   - Получает расширенные права
+
+### Управление тасками
+
+1. **Создание таски:**
+   - Пользователь заполняет форму (название, описание, дедлайн)
+   - Выбирает категории из фильтров (может несколько)
+   - Backend создает запись в tasks и task_assignees
+   - Создаются уведомления для всех выбранных категорий
+   - WebSocket отправляет уведомления online пользователям
+
+2. **Редактирование таски:**
+   - Гость может редактировать только свои таски
+   - Админ может редактировать любые
+   - При изменении дедлайна создаются новые уведомления
+   - WebSocket оповещает об изменениях
+
+3. **Просмотр таски:**
+   - При открытии детального описания создается запись в task_views
+   - При наведении на иконку глаза показывается список просмотревших
+
+4. **Удаление таски:**
+   - Гость удаляет только свои таски
+   - Админ может удалить любую или все просроченные одним кликом
+
+### Система уведомлений
+
+1. **Типы уведомлений:**
+   - Новая таска для категории пользователя
+   - Изменение дедлайна таски
+
+2. **Механизм работы:**
+   - Уведомления хранятся в БД
+   - При входе пользователь видит накопленные уведомления
+   - WebSocket доставляет новые уведомления в real-time
+   - Уведомления фильтруются по категориям пользователя
+
+### Автоматическая проверка просроченных тасок
+
+Backend запускает cron-задачу (каждый час):
+```typescript
+@Cron('0 * * * *') // каждый час
+async checkOverdueTasks() {
+  await this.tasksRepository.update(
+    { deadline: LessThan(new Date()), is_overdue: false },
+    { is_overdue: true }
+  );
+}
+```
+
+---
+
+## 6. Безопасность
+
+### Аутентификация и авторизация
+
+1. **Guards в NestJS:**
+   - `SchoolAuthGuard` - проверяет валидность session_token
+   - `AdminGuard` - проверяет флаг is_admin в сессии
+
+2. **Хранение паролей:**
+   - Пароли школ и админов хешируются через bcrypt
+   - Не хранятся в открытом виде
+
+3. **Сессии:**
+   - Session token генерируется криптографически стойким генератором
+   - Хранится в БД с привязкой к школе и пользователю
+   - Автоматически обновляется last_active при каждом запросе
+
+### Валидация данных
+
+- Все входящие DTO валидируются через class-validator
+- Проверка прав доступа на уровне контроллеров
+- SQL injection защита через ORM
+
+---
+
+## 7. Адаптивность (responsive design)
+
+### Брейкпоинты
+- Mobile: < 768px
+- Tablet: 768px - 1024px
+- Desktop: > 1024px
+
+### Адаптация UI
+- Mobile: список тасок в одну колонку (классический список), боковое меню скрывается в бургер
+- Tablet: свободное расположение тасок на canvas с drag-and-drop, группировка при наложении
+- Desktop: свободное расположение тасок на canvas с drag-and-drop, группировка при наложении, боковое меню всегда видно
+
+---
+
+## 8. Развертывание (локальная сеть)
+
+### Docker Compose конфигурация
+
+```yaml
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: school_tasks
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/school_tasks
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+
+  frontend:
+    build: ./frontend
+    environment:
+      REACT_APP_API_URL: http://localhost:3000
+      REACT_APP_WS_URL: ws://localhost:3000
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - frontend
+      - backend
+
+volumes:
+  postgres_data:
+```
+
+### Доступ из локальной сети
+- Приложение доступно по IP сервера в локальной сети
+- Например: http://192.168.1.100:8080
+
+---
+
+## 11. Canvas UI и система группировки (Desktop/Tablet)
+
+### Концепция работы Canvas
+
+Desktop и Tablet используют свободное рабочее пространство (canvas), где таски можно перемещать drag-and-drop в любое место. Mobile использует классический список с прокруткой.
+
+### Компонент TaskCanvas
+
+**Основные функции:**
+- Бесконечное рабочее поле с прокруткой (scroll)
+- Drag & Drop таск в любую точку canvas
+- Автоматическое определение наложения тасок (collision detection)
+- Визуальная индикация при наложении (highlight зоны)
+- Создание групп при наложении одной таски на другую
+
+### Логика Drag & Drop
+
+```typescript
+// hooks/useDragAndDrop.ts
+interface DragState {
+  isDragging: boolean;
+  taskId: number;
+  startPosition: { x: number; y: number };
+  currentPosition: { x: number; y: number };
+  potentialCollisions: number[]; // ID тасок, на которые накладывается текущая
+}
+
+// При начале перетаскивания
+onDragStart(taskId) {
+  - Увеличить z-index таски (поднять выше всех)
+  - Сохранить начальную позицию
+  - Активировать режим collision detection
+}
+
+// Во время перетаскивания
+onDrag(position) {
+  - Обновить положение таски на canvas
+  - Проверить пересечение с другими тасками (collision detection)
+  - Подсветить таски, с которыми есть пересечение > 50% площади
+}
+
+// При завершении перетаскивания
+onDragEnd(finalPosition) {
+  - Если есть пересечение > 50% с другими тасками:
+    * Создать группу или добавить в существующую
+    * Анимировать объединение
+  - Иначе:
+    * Сохранить новую позицию в БД
+  - Сбросить z-index
+}
+```
+
+### Система группировки "Бутерброд"
+
+**Визуальное представление группы:**
+```
+┌─────────────────┐
+│  Таска 1 (Top)  │  ← Видимая таска (показывает счетчик +2)
+└─────────────────┘
+  ┌─────────────┐
+  │  Таска 2    │  ← Частично видна сверху
+  └─────────────┘
+    ┌─────────┐
+    │ Таска 3 │  ← Частично видна сверху
+    └─────────┘
+```
+
+**Характеристики группы:**
+- Верхняя таска отображается полностью с иконкой "стек" и счетчиком (например "+2")
+- Остальные таски видны верхними краями (5-10px) со смещением вниз и вправо
+- При клике на группу открывается список всех тасок в модальном окне
+- При перетаскивании группы перемещаются все таски вместе
+- Можно "разбить" группу, перетащив отдельную таску из модального окна
+
+### Collision Detection (определение наложения)
+
+```typescript
+// utils/collisionDetection.ts
+interface TaskRect {
+  taskId: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function calculateOverlapPercentage(task1: TaskRect, task2: TaskRect): number {
+  const overlapX = Math.max(0, Math.min(task1.x + task1.width, task2.x + task2.width) 
+                              - Math.max(task1.x, task2.x));
+  const overlapY = Math.max(0, Math.min(task1.y + task1.height, task2.y + task2.height) 
+                              - Math.max(task1.y, task2.y));
+  
+  const overlapArea = overlapX * overlapY;
+  const task1Area = task1.width * task1.height;
+  
+  return (overlapArea / task1Area) * 100;
+}
+
+function detectCollisions(draggedTask: TaskRect, allTasks: TaskRect[]): number[] {
+  return allTasks
+    .filter(task => task.taskId !== draggedTask.taskId)
+    .filter(task => calculateOverlapPercentage(draggedTask, task) > 50)
+    .map(task => task.taskId);
+}
+```
+
+### Создание и управление группами
+
+**Сценарий 1: Создание новой группы**
+1. Пользователь перетаскивает Таску A на Таску B (наложение > 50%)
+2. Система создает группу в БД (таблица task_groups)
+3. Обе таски получают group_id этой группы
+4. Позиция группы = позиция нижней таски (Таска B)
+5. z-index для визуализации: Таска A (top) = z + 2, Таска B = z + 1
+
+**Сценарий 2: Добавление к существующей группе**
+1. Пользователь перетаскивает Таску C на существующую группу
+2. Таска C получает group_id этой группы
+3. Становится верхней в стеке (максимальный z-index в группе)
+4. Счетчик на группе увеличивается
+
+**Сценарий 3: Разгруппировка**
+1. Открыть группу (клик на стек)
+2. В модальном окне показать список всех тасок
+3. Перетащить таску из списка на canvas
+4. Таска получает новую позицию и group_id = null
+5. Если в группе осталась 1 таска - группа автоматически удаляется
+
+**Сценарий 4: Перемещение группы**
+1. Drag группы перемещает все таски с сохранением их относительных позиций
+2. Обновляется position группы в БД
+3. Индивидуальные позиции тасок пересчитываются относительно группы
+
+### Персонализация позиций
+
+**Важно:** Позиции тасок сохраняются **для каждого пользователя отдельно**!
+
+- Таблица task_positions связана с user_session_id
+- Каждый пользователь видит таски в своем расположении
+- Пользователь А может сгруппировать Таску 1 и 2, а пользователь Б увидит их отдельно в своей раскладке
+- При первом входе новый пользователь видит таски в дефолтной позиции (grid layout)
+
+### Дефолтная раскладка для новых пользователей
+
+При первом входе (нет записей в task_positions) таски располагаются автоматически:
+- Grid layout: 4 колонки на Desktop, 3 на Tablet
+- Отступы: 20px между тасками
+- Сортировка: по приоритету (срочные → промежуточные → несрочные)
+
+### Размеры компонентов
+
+```typescript
+const TASK_DIMENSIONS = {
+  desktop: { width: 280, height: 200 },
+  tablet: { width: 240, height: 180 },
+  mobile: { width: '100%', height: 'auto' } // list mode
+};
+
+const CANVAS_CONFIG = {
+  minWidth: 2000,   // минимальная ширина рабочего поля
+  minHeight: 2000,  // минимальная высота
+  padding: 20,      // отступы от краев
+  groupOffset: 8    // смещение тасок в группе для эффекта "бутерброда"
+};
+```
+
+### Анимации
+
+```css
+/* Плавное перемещение таски */
+.task-card {
+  transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+}
+
+/* При наведении во время drag */
+.task-card.collision-potential {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
+  transform: scale(1.02);
+}
+
+/* Анимация группировки */
+@keyframes groupMerge {
+  0% { transform: scale(1) rotate(0deg); }
+  50% { transform: scale(0.95) rotate(2deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+.task-card.merging {
+  animation: groupMerge 0.4s ease-in-out;
+}
+```
+
+### Взаимодействие с группами
+
+**Иконка группы (стек):**
+```
+┌─────────────────────────┐
+│  📋 Название таски       │
+│  ⏰ 2 дня до дедлайна    │
+│  👤 Для: Учителя         │
+│                          │
+│  [👁️ 3]  [📚 +2]  ←─── Индикаторы:
+└─────────────────────────┘   👁️ просмотры
+                               📚 стек (+2 таски)
+```
+
+**Клик на группу:**
+- Открывается модальное окно
+- Список всех тасок в группе
+- Возможность:
+  * Открыть детали каждой таски
+  * Перетащить таску из группы на canvas
+  * Разгруппировать все
+
+### API эндпоинты для позиций
+
+```typescript
+// Получить все позиции для текущего пользователя
+GET /task-positions
+Response: {
+  positions: [
+    { taskId: 1, x: 100, y: 200, zIndex: 0, groupId: null },
+    { taskId: 2, x: 420, y: 200, zIndex: 1, groupId: 5 },
+    { taskId: 3, x: 420, y: 200, zIndex: 2, groupId: 5 }
+  ],
+  groups: [
+    { id: 5, x: 420, y: 200, taskCount: 2 }
+  ]
+}
+
+// Обновить позицию таски
+PATCH /task-positions/123
+Body: { x: 300, y: 400 }
+
+// Создать группу
+POST /task-positions/group
+Body: { taskIds: [2, 3], x: 420, y: 200 }
+
+// Добавить таску в группу
+PATCH /task-positions/group/5/add-task
+Body: { taskId: 7 }
+
+// Убрать таску из группы
+PATCH /task-positions/group/5/remove-task/3
+Body: { newX: 800, newY: 300 }
+
+// Переместить всю группу
+PATCH /task-positions/group/5/move
+Body: { x: 600, y: 400 }
+```
+
+### Особенности Mobile версии
+
+На мобильных устройствах (< 768px):
+- Canvas отключается
+- Используется классический вертикальный список
+- Группировка недоступна
+- Сортировка: по приоритету, дате создания
+- Фильтры доступны через выпадающее меню
+- Свайп для быстрых действий (удалить, отметить просмотренным)
+
+---
+
+## 12. Будущие улучшения (возможности расширения)
+
+1. **Логирование действий пользователей**
+   - Добавить таблицу audit_logs
+   - Записывать все CRUD операции с тасками
+
+2. **Экспорт данных**
+   - Экспорт тасок в Excel/PDF
+
+3. **Статистика**
+   - Dashboard с графиками выполнения тасок
+   - Отчеты по категориям
+
+4. **Email уведомления**
+   - Дублирование критических уведомлений на email
+
+5. **Мультитенантность**
+   - Поддержка нескольких школ в одной системе
+
+---
+
+## 10. Производительность
+
+### Оптимизации
+
+1. **Индексы в БД:**
+```sql
+CREATE INDEX idx_tasks_school_deadline ON tasks(school_id, deadline);
+CREATE INDEX idx_tasks_creator ON tasks(creator_name);
+CREATE INDEX idx_notifications_recipient ON notifications(recipient_category);
+CREATE INDEX idx_user_sessions_token ON user_sessions(session_token);
+```
+
+2. **Кэширование:**
+   - Список фильтров кэшируется в Redis (опционально)
+   - Frontend кэширует список тасок с периодическим обновлением
+
+3. **Пагинация:**
+   - Таски загружаются с лимитом (например, 50 за раз)
+   - Lazy loading при прокрутке
+
+4. **WebSocket оптимизация:**
+   - Уведомления отправляются только online пользователям
+   - Room-based подход (отдельная комната для каждой школы)
