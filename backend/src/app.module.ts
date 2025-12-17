@@ -12,6 +12,9 @@ import { TasksModule } from './modules/tasks/tasks.module';
 import { TaskPositionsModule } from './modules/task-positions/task-positions.module';
 import { FiltersModule } from './modules/filters/filters.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { StatisticsModule } from './modules/statistics/statistics.module';
+import { ExportModule } from './modules/export/export.module';
+
 
 
 @Module({
@@ -37,7 +40,9 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     TasksModule,
     TaskPositionsModule,
     FiltersModule,
-    NotificationsModule
+    NotificationsModule,
+    StatisticsModule,
+    ExportModule
   ],
   controllers: [AppController],
   providers: [AppService],

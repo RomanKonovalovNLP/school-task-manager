@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository } from 'typeorm';
 import { TaskPosition } from './entities/task-position.entity';
 import { TaskGroup } from './entities/task-group.entity';
 import { Task } from '../tasks/entities/task.entity';
@@ -11,46 +11,82 @@ import { CreateGroupDto } from './dto/create-group.dto';
 export class TaskPositionsService {
     constructor(
         @InjectRepository(TaskPosition)
-        private positionRepository: Repository<TaskPosition>,
+        private taskPositionsRepo: Repository<TaskPosition>,
         @InjectRepository(TaskGroup)
-        private groupRepository: Repository<TaskGroup>,
+        private taskGroupsRepo: Repository<TaskGroup>,
         @InjectRepository(Task)
-        private taskRepository: Repository<Task>,
+        private tasksRepo: Repository<Task>,
     ) { }
 
     /**
-     * Получить все позиции тасок для пользователя
+     * Получить все позиции и группы для пользователя
      */
     async getAllPositions(userSessionId: number, schoolId: number) {
-        const positions = await this.positionRepository.find({
-            where: { userSessionId },
-            relations: ['task'],
+        // Получаем все таски школы
+        const tasks = await this.tasksRepo.find({
+            where: { schoolId },
+            select: ['id'],
         });
 
-        const groups = await this.groupRepository.find({
+        const taskIds = tasks.map((t) => t.id);
+
+        // Получаем позиции тасок
+        const positions = await this.taskPositionsRepo.find({
+            where: { userSessionId },
+        });
+
+        // Создаем дефолтные позиции для тасок, у которых их нет
+        const existingTaskIds = positions.map((p) => p.taskId);
+        const missingTaskIds = taskIds.filter((id) => !existingTaskIds.includes(id));
+
+        if (missingTaskIds.length > 0) {
+            const newPositions = await this.createDefaultPositions(
+                missingTaskIds,
+                userSessionId,
+                schoolId,
+            );
+            positions.push(...newPositions);
+        }
+
+        // Получаем группы
+        const groups = await this.taskGroupsRepo.find({
             where: { userSessionId, schoolId },
         });
 
-        // Получить все таски школы
-        const allTasks = await this.taskRepository.find({
-            where: { schoolId },
-            relations: ['assignees', 'views'],
-        });
-
-        // Создать дефолтные позиции для тасок, у которых их нет
-        const tasksWithoutPositions = allTasks.filter(
-            (task) => !positions.find((p) => p.taskId === task.id),
-        );
-
-        const defaultPositions = this.generateDefaultPositions(
-            tasksWithoutPositions,
-            userSessionId,
-        );
-
         return {
-            positions: [...positions, ...defaultPositions],
+            positions,
             groups,
         };
+    }
+
+    /**
+     * Создать дефолтные позиции для новых тасок (grid layout)
+     */
+    private async createDefaultPositions(
+        taskIds: number[],
+        userSessionId: number,
+        schoolId: number,
+    ): Promise<TaskPosition[]> {
+        const COLUMNS = 4;
+        const TASK_WIDTH = 280;
+        const TASK_HEIGHT = 200;
+        const PADDING = 20;
+
+        const newPositions = taskIds.map((taskId, index) => {
+            const row = Math.floor(index / COLUMNS);
+            const col = index % COLUMNS;
+
+            return this.taskPositionsRepo.create({
+                taskId,
+                userSessionId,
+                positionX: PADDING + col * (TASK_WIDTH + PADDING),
+                positionY: PADDING + row * (TASK_HEIGHT + PADDING),
+                zIndex: 0,
+                groupId: null,
+            });
+        });
+
+        return this.taskPositionsRepo.save(newPositions);
     }
 
     /**
@@ -61,26 +97,27 @@ export class TaskPositionsService {
         updateDto: UpdatePositionDto,
         userSessionId: number,
     ) {
-        let position = await this.positionRepository.findOne({
+        const position = await this.taskPositionsRepo.findOne({
             where: { taskId, userSessionId },
         });
 
         if (!position) {
-            // Создать новую позицию
-            position = this.positionRepository.create({
+            // Создаем новую позицию, если её нет
+            const newPosition = this.taskPositionsRepo.create({
                 taskId,
                 userSessionId,
                 positionX: updateDto.x,
                 positionY: updateDto.y,
                 zIndex: 0,
-                groupId: null,
             });
-        } else {
-            position.positionX = updateDto.x;
-            position.positionY = updateDto.y;
+            return this.taskPositionsRepo.save(newPosition);
         }
 
-        return this.positionRepository.save(position);
+        position.positionX = updateDto.x;
+        position.positionY = updateDto.y;
+        position.updatedAt = new Date();
+
+        return this.taskPositionsRepo.save(position);
     }
 
     /**
@@ -91,84 +128,50 @@ export class TaskPositionsService {
         userSessionId: number,
         schoolId: number,
     ) {
-        // Проверить что все таски существуют
-        const tasks = await this.taskRepository.find({
-            where: { id: In(createGroupDto.taskIds), schoolId },
-        });
+        const { taskIds, x, y } = createGroupDto;
 
-        if (tasks.length !== createGroupDto.taskIds.length) {
-            throw new NotFoundException('Некоторые задачи не найдены');
+        if (taskIds.length < 2) {
+            throw new BadRequestException('Группа должна содержать минимум 2 таски');
         }
 
-        // Создать группу
-        const group = this.groupRepository.create({
-            schoolId,
+        // Создаем группу
+        const group = this.taskGroupsRepo.create({
             userSessionId,
-            positionX: createGroupDto.x,
-            positionY: createGroupDto.y,
+            schoolId,
+            positionX: x,
+            positionY: y,
         });
 
-        const savedGroup = await this.groupRepository.save(group);
+        const savedGroup = await this.taskGroupsRepo.save(group);
 
-        // Обновить позиции тасок - присвоить groupId
-        for (let i = 0; i < createGroupDto.taskIds.length; i++) {
-            const taskId = createGroupDto.taskIds[i];
-            let position = await this.positionRepository.findOne({
+        // Обновляем позиции тасок
+        let zIndex = 0;
+        for (const taskId of taskIds) {
+            const position = await this.taskPositionsRepo.findOne({
                 where: { taskId, userSessionId },
             });
 
-            if (!position) {
-                position = this.positionRepository.create({
-                    taskId,
-                    userSessionId,
-                    positionX: createGroupDto.x,
-                    positionY: createGroupDto.y,
-                    zIndex: i,
-                    groupId: savedGroup.id,
-                });
-            } else {
-                position.positionX = createGroupDto.x;
-                position.positionY = createGroupDto.y;
-                position.zIndex = i;
+            if (position) {
                 position.groupId = savedGroup.id;
+                position.positionX = x;
+                position.positionY = y;
+                position.zIndex = zIndex++;
+                await this.taskPositionsRepo.save(position);
             }
-
-            await this.positionRepository.save(position);
         }
 
-        return savedGroup;
+        return {
+            groupId: savedGroup.id,
+            taskIds,
+            position: { x, y },
+        };
     }
 
     /**
-     * Разгруппировать таски
+     * Добавить таску в существующую группу
      */
-    async ungroupTasks(groupId: number, userSessionId: number) {
-        // Найти все позиции с этим groupId
-        const positions = await this.positionRepository.find({
-            where: { groupId, userSessionId },
-        });
-
-        // Убрать groupId у всех позиций
-        for (const position of positions) {
-            position.groupId = null;
-            await this.positionRepository.save(position);
-        }
-
-        // Удалить группу
-        await this.groupRepository.delete({ id: groupId, userSessionId });
-
-        return { message: 'Группа расформирована', affectedTasks: positions.length };
-    }
-
-    /**
-     * Переместить группу
-     */
-    async moveGroup(
-        groupId: number,
-        updateDto: UpdatePositionDto,
-        userSessionId: number,
-    ) {
-        const group = await this.groupRepository.findOne({
+    async addTaskToGroup(groupId: number, taskId: number, userSessionId: number) {
+        const group = await this.taskGroupsRepo.findOne({
             where: { id: groupId, userSessionId },
         });
 
@@ -176,74 +179,30 @@ export class TaskPositionsService {
             throw new NotFoundException('Группа не найдена');
         }
 
-        const deltaX = updateDto.x - group.positionX;
-        const deltaY = updateDto.y - group.positionY;
-
-        // Обновить позицию группы
-        group.positionX = updateDto.x;
-        group.positionY = updateDto.y;
-        await this.groupRepository.save(group);
-
-        // Переместить все таски в группе
-        const positions = await this.positionRepository.find({
+        // Находим максимальный z-index в группе
+        const tasksInGroup = await this.taskPositionsRepo.find({
             where: { groupId, userSessionId },
         });
 
-        for (const position of positions) {
-            position.positionX += deltaX;
-            position.positionY += deltaY;
-            await this.positionRepository.save(position);
-        }
+        const maxZIndex = Math.max(...tasksInGroup.map((t) => t.zIndex || 0), -1);
 
-        return group;
-    }
-
-    /**
-     * Добавить таску в группу
-     */
-    async addTaskToGroup(
-        groupId: number,
-        taskId: number,
-        userSessionId: number,
-    ) {
-        const group = await this.groupRepository.findOne({
-            where: { id: groupId, userSessionId },
-        });
-
-        if (!group) {
-            throw new NotFoundException('Группа не найдена');
-        }
-
-        // Найти максимальный zIndex в группе
-        const positions = await this.positionRepository.find({
-            where: { groupId, userSessionId },
-            order: { zIndex: 'DESC' },
-        });
-
-        const maxZIndex = positions.length > 0 ? positions[0].zIndex : 0;
-
-        // Обновить или создать позицию
-        let position = await this.positionRepository.findOne({
+        // Обновляем позицию таски
+        const position = await this.taskPositionsRepo.findOne({
             where: { taskId, userSessionId },
         });
 
         if (!position) {
-            position = this.positionRepository.create({
-                taskId,
-                userSessionId,
-                positionX: group.positionX,
-                positionY: group.positionY,
-                zIndex: maxZIndex + 1,
-                groupId: group.id,
-            });
-        } else {
-            position.positionX = group.positionX;
-            position.positionY = group.positionY;
-            position.zIndex = maxZIndex + 1;
-            position.groupId = group.id;
+            throw new NotFoundException('Позиция таски не найдена');
         }
 
-        return this.positionRepository.save(position);
+        position.groupId = groupId;
+        position.positionX = group.positionX;
+        position.positionY = group.positionY;
+        position.zIndex = maxZIndex + 1;
+
+        await this.taskPositionsRepo.save(position);
+
+        return { success: true };
     }
 
     /**
@@ -256,62 +215,173 @@ export class TaskPositionsService {
         newY: number,
         userSessionId: number,
     ) {
-        const position = await this.positionRepository.findOne({
+        const position = await this.taskPositionsRepo.findOne({
             where: { taskId, userSessionId, groupId },
         });
 
         if (!position) {
-            throw new NotFoundException('Задача не найдена в группе');
+            throw new NotFoundException('Таска не найдена в группе');
         }
 
+        // Убираем из группы
         position.groupId = null;
         position.positionX = newX;
         position.positionY = newY;
-        await this.positionRepository.save(position);
+        position.zIndex = 0;
 
-        // Проверить, осталась ли в группе хотя бы 1 таска
-        const remainingPositions = await this.positionRepository.find({
+        await this.taskPositionsRepo.save(position);
+
+        // Проверяем, осталось ли в группе больше одной таски
+        const remainingTasks = await this.taskPositionsRepo.count({
             where: { groupId, userSessionId },
         });
 
-        // Если осталась только 1 таска или 0 - удалить группу
-        if (remainingPositions.length <= 1) {
-            await this.groupRepository.delete({ id: groupId, userSessionId });
-
-            // Убрать groupId у оставшейся таски
-            if (remainingPositions.length === 1) {
-                remainingPositions[0].groupId = null;
-                await this.positionRepository.save(remainingPositions[0]);
-            }
+        if (remainingTasks <= 1) {
+            // Удаляем группу и сбрасываем groupId последней таски
+            await this.ungroupTasks(groupId, userSessionId);
         }
 
-        return position;
+        return { success: true };
     }
 
     /**
-     * Генерация дефолтных позиций для новых тасок (grid layout)
+     * Переместить всю группу
      */
-    private generateDefaultPositions(
-        tasks: Task[],
-        userSessionId: number,
-    ): Partial<TaskPosition>[] {
-        const TASK_WIDTH = 280;
-        const TASK_HEIGHT = 200;
-        const PADDING = 20;
-        const COLUMNS = 4;
-
-        return tasks.map((task, index) => {
-            const column = index % COLUMNS;
-            const row = Math.floor(index / COLUMNS);
-
-            return {
-                taskId: task.id,
-                userSessionId,
-                positionX: PADDING + column * (TASK_WIDTH + PADDING),
-                positionY: PADDING + row * (TASK_HEIGHT + PADDING),
-                zIndex: 0,
-                groupId: null,
-            };
+    async moveGroup(groupId: number, updateDto: UpdatePositionDto, userSessionId: number) {
+        const group = await this.taskGroupsRepo.findOne({
+            where: { id: groupId, userSessionId },
         });
+
+        if (!group) {
+            throw new NotFoundException('Группа не найдена');
+        }
+
+        // Обновляем позицию группы
+        group.positionX = updateDto.x;
+        group.positionY = updateDto.y;
+        group.updatedAt = new Date();
+
+        await this.taskGroupsRepo.save(group);
+
+        // Обновляем позиции всех тасок в группе
+        await this.taskPositionsRepo
+            .createQueryBuilder()
+            .update(TaskPosition)
+            .set({
+                positionX: updateDto.x,
+                positionY: updateDto.y,
+                updatedAt: new Date(),
+            })
+            .where('groupId = :groupId', { groupId })
+            .andWhere('userSessionId = :userSessionId', { userSessionId })
+            .execute();
+
+        return { success: true };
+    }
+
+    /**
+     * Разгруппировать все таски в группе
+     */
+    async ungroupTasks(groupId: number, userSessionId: number) {
+        const group = await this.taskGroupsRepo.findOne({
+            where: { id: groupId, userSessionId },
+        });
+
+        if (!group) {
+            throw new NotFoundException('Группа не найдена');
+        }
+
+        // Получаем все таски группы
+        const groupTasks = await this.taskPositionsRepo.find({
+            where: { groupId, userSessionId },
+        });
+
+        // Размещаем таски веером вокруг исходной позиции группы
+        const OFFSET = 320; // отступ между тасками
+        for (let i = 0; i < groupTasks.length; i++) {
+            const task = groupTasks[i];
+            task.groupId = null;
+            task.positionX = group.positionX + i * OFFSET;
+            task.positionY = group.positionY;
+            task.zIndex = 0;
+        }
+
+        await this.taskPositionsRepo.save(groupTasks);
+
+        // Удаляем группу
+        await this.taskGroupsRepo.delete({ id: groupId });
+
+        return { success: true };
+    }
+
+    /**
+     * Получить информацию о группе
+     */
+    async getGroupInfo(groupId: number, userSessionId: number) {
+        const group = await this.taskGroupsRepo.findOne({
+            where: { id: groupId, userSessionId },
+        });
+
+        if (!group) {
+            throw new NotFoundException('Группа не найдена');
+        }
+
+        const tasks = await this.taskPositionsRepo.find({
+            where: { groupId, userSessionId },
+        });
+
+        return {
+            id: group.id,
+            position: { x: group.positionX, y: group.positionY },
+            taskIds: tasks.map((t) => t.taskId),
+            taskCount: tasks.length,
+        };
+    }
+
+    /**
+     * Массовое обновление позиций
+     */
+    async bulkUpdatePositions(
+        updates: Array<{ taskId: number; x: number; y: number }>,
+        userSessionId: number,
+    ) {
+        const promises = updates.map(async (update) => {
+            const position = await this.taskPositionsRepo.findOne({
+                where: { taskId: update.taskId, userSessionId },
+            });
+
+            if (position) {
+                position.positionX = update.x;
+                position.positionY = update.y;
+                position.updatedAt = new Date();
+                return this.taskPositionsRepo.save(position);
+            }
+        });
+
+        await Promise.all(promises);
+
+        return { success: true, updated: updates.length };
+    }
+
+    /**
+     * Сбросить все позиции к дефолтному grid layout
+     */
+    async resetToDefaultLayout(userSessionId: number, schoolId: number) {
+        // Удаляем все существующие позиции
+        await this.taskPositionsRepo.delete({ userSessionId });
+
+        // Удаляем все группы
+        await this.taskGroupsRepo.delete({ userSessionId, schoolId });
+
+        // Получаем все таски и создаем дефолтные позиции
+        const tasks = await this.tasksRepo.find({
+            where: { schoolId },
+            select: ['id'],
+        });
+
+        const taskIds = tasks.map((t) => t.id);
+        await this.createDefaultPositions(taskIds, userSessionId, schoolId);
+
+        return { success: true, message: 'Позиции сброшены к дефолтным' };
     }
 }

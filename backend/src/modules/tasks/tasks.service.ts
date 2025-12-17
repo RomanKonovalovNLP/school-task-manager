@@ -12,6 +12,11 @@ import { TaskView } from './entities/task-view.entity';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { TaskFilterDto, TaskPriority } from './dto/task-filter.dto';
+import { NotificationsGateway } from '../notifications/notifications.gateway';
+import {
+    NotificationsService,
+    NotificationType,
+} from '../notifications/notifications.service';
 
 @Injectable()
 export class TasksService {
@@ -22,6 +27,8 @@ export class TasksService {
         private assigneeRepository: Repository<TaskAssignee>,
         @InjectRepository(TaskView)
         private viewRepository: Repository<TaskView>,
+        private notificationsService: NotificationsService,
+        private notificationsGateway: NotificationsGateway,
     ) { }
 
     /**
@@ -48,6 +55,40 @@ export class TasksService {
         });
 
         await this.assigneeRepository.save(assignees);
+
+        // === НОВОЕ: Отправка уведомлений ===
+        try {
+            // Создаем уведомления в БД
+            await this.notificationsService.createNotification(
+                user.schoolId,
+                createTaskDto.assigneeCategories,
+                savedTask.id,
+                NotificationType.NEW_TASK,
+                `Новая задача: ${savedTask.title}`,
+            );
+
+            // Отправляем real-time уведомление через WebSocket
+            this.notificationsGateway.sendNotificationToCategories(
+                user.schoolId,
+                createTaskDto.assigneeCategories,
+                {
+                    id: savedTask.id,
+                    type: NotificationType.NEW_TASK,
+                    message: `Новая задача: ${savedTask.title}`,
+                    taskId: savedTask.id,
+                    createdAt: new Date(),
+                },
+            );
+
+            // Broadcast создание таски для синхронизации canvas
+            this.notificationsGateway.broadcastTaskCreated(
+                user.schoolId,
+                savedTask,
+            );
+        } catch (error) {
+            console.error('Failed to send notification:', error);
+            // Не прерываем создание таски, если уведомление не отправилось
+        }
 
         // Загрузить таску с assignees
         return this.findOne(savedTask.id, user);
@@ -121,8 +162,16 @@ export class TasksService {
 
         // Проверить права: гость может редактировать только свои таски
         if (!user.isAdmin && task.creatorName !== user.fullName) {
-            throw new ForbiddenException('Вы можете редактировать только свои задачи');
+            throw new ForbiddenException(
+                'Вы можете редактировать только свои задачи',
+            );
         }
+
+        // === НОВОЕ: Отслеживание изменения дедлайна ===
+        const oldDeadline = task.deadline;
+        const deadlineChanged =
+            updateTaskDto.deadline &&
+            new Date(updateTaskDto.deadline).getTime() !== oldDeadline.getTime();
 
         // Обновить поля
         if (updateTaskDto.title) task.title = updateTaskDto.title;
@@ -139,14 +188,61 @@ export class TasksService {
             await this.assigneeRepository.delete({ taskId: task.id });
 
             // Создать новые
-            const newAssignees = updateTaskDto.assigneeCategories.map((category) => {
-                return this.assigneeRepository.create({
-                    taskId: task.id,
-                    assigneeCategory: category,
-                });
-            });
+            const newAssignees = updateTaskDto.assigneeCategories.map(
+                (category) => {
+                    return this.assigneeRepository.create({
+                        taskId: task.id,
+                        assigneeCategory: category,
+                    });
+                },
+            );
 
             await this.assigneeRepository.save(newAssignees);
+        }
+
+        // === НОВОЕ: Отправка уведомлений при изменении дедлайна ===
+        if (deadlineChanged) {
+            try {
+                // Получаем категории для уведомления
+                const categories =
+                    updateTaskDto.assigneeCategories ||
+                    task.assignees.map((a) => a.assigneeCategory);
+
+                // Создаем уведомления в БД
+                await this.notificationsService.createNotification(
+                    user.schoolId,
+                    categories,
+                    task.id,
+                    NotificationType.DEADLINE_CHANGED,
+                    `Изменен дедлайн задачи: ${task.title}`,
+                );
+
+                // Отправляем real-time уведомление
+                this.notificationsGateway.sendNotificationToCategories(
+                    user.schoolId,
+                    categories,
+                    {
+                        id: task.id,
+                        type: NotificationType.DEADLINE_CHANGED,
+                        message: `Изменен дедлайн задачи: ${task.title}`,
+                        taskId: task.id,
+                        createdAt: new Date(),
+                    },
+                );
+            } catch (error) {
+                console.error('Failed to send deadline change notification:', error);
+            }
+        }
+
+        // === НОВОЕ: Broadcast обновления для синхронизации canvas ===
+        try {
+            const updatedTask = await this.findOne(id, user);
+            this.notificationsGateway.broadcastTaskUpdate(
+                user.schoolId,
+                updatedTask,
+            );
+        } catch (error) {
+            console.error('Failed to broadcast task update:', error);
         }
 
         return this.findOne(id, user);
@@ -171,6 +267,13 @@ export class TasksService {
 
         await this.taskRepository.remove(task);
 
+        // === НОВОЕ: Broadcast удаления для синхронизации canvas ===
+        try {
+            this.notificationsGateway.broadcastTaskDelete(user.schoolId, id);
+        } catch (error) {
+            console.error('Failed to broadcast task deletion:', error);
+        }
+
         return { message: 'Задача успешно удалена', id };
     }
 
@@ -189,7 +292,21 @@ export class TasksService {
             },
         });
 
+        const deletedTaskIds = overdueTasks.map((task) => task.id);
+
         await this.taskRepository.remove(overdueTasks);
+
+        // === НОВОЕ: Broadcast удаления множества тасок ===
+        try {
+            deletedTaskIds.forEach((taskId) => {
+                this.notificationsGateway.broadcastTaskDelete(
+                    user.schoolId,
+                    taskId,
+                );
+            });
+        } catch (error) {
+            console.error('Failed to broadcast bulk deletion:', error);
+        }
 
         return {
             message: 'Просроченные задачи успешно удалены',
@@ -228,6 +345,17 @@ export class TasksService {
         });
 
         await this.viewRepository.save(view);
+
+        // === НОВОЕ: Broadcast обновления просмотров ===
+        try {
+            const updatedTask = await this.findOne(taskId, user);
+            this.notificationsGateway.broadcastTaskUpdate(
+                user.schoolId,
+                updatedTask,
+            );
+        } catch (error) {
+            console.error('Failed to broadcast view update:', error);
+        }
 
         return { message: 'Задача отмечена как просмотренная' };
     }
@@ -315,6 +443,7 @@ export class TasksService {
             priority,
             viewedByUser,
             viewsCount: task.views?.length || 0,
+            assigneeCategories: task.assignees?.map((a) => a.assigneeCategory) || [],
         };
     }
 }
