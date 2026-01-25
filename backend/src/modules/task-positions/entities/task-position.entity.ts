@@ -3,16 +3,15 @@ import {
     PrimaryGeneratedColumn,
     Column,
     ManyToOne,
-    CreateDateColumn,
     UpdateDateColumn,
     JoinColumn,
     Unique,
 } from 'typeorm';
 import { Task } from '../../tasks/entities/task.entity';
-import { UserSession } from '../../auth/entities/user-session.entity';
+import { UserProfile } from '../../users/entities/user-profile.entity';
 
 @Entity('task_positions')
-@Unique(['taskId', 'userSessionId'])
+@Unique(['taskId', 'userProfileId'])
 export class TaskPosition {
     @PrimaryGeneratedColumn()
     id: number;
@@ -24,12 +23,12 @@ export class TaskPosition {
     @JoinColumn({ name: 'task_id' })
     task: Task;
 
-    @Column({ name: 'user_session_id' })
-    userSessionId: number;
+    @Column({ name: 'user_profile_id' })
+    userProfileId: number;
 
-    @ManyToOne(() => UserSession, { onDelete: 'CASCADE' })
-    @JoinColumn({ name: 'user_session_id' })
-    userSession: UserSession;
+    @ManyToOne(() => UserProfile, { onDelete: 'CASCADE' })
+    @JoinColumn({ name: 'user_profile_id' })
+    userProfile: UserProfile;
 
     @Column({ type: 'int', name: 'position_x' })
     positionX: number;

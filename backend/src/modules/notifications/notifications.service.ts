@@ -1,14 +1,24 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Notification } from './entities/notification.entity';
 import { UserSession } from '../auth/entities/user-session.entity';
+import { UserProfile } from '../users/entities/user-profile.entity';
+import { UserCategory } from '../filters/entities/user-category.entity';
 
 export enum NotificationType {
+    // Задачи
     NEW_TASK = 'new_task',
     DEADLINE_CHANGED = 'deadline_changed',
+    TASK_EDITED = 'task_edited',
     TASK_DELETED = 'task_deleted',
     TASK_ASSIGNED = 'task_assigned',
+    
+    // Мероприятия
+    NEW_EVENT = 'new_event',
+    EVENT_UPDATED = 'event_updated',
+    EVENT_DATE_CHANGED = 'event_date_changed',
+    EVENT_DELETED = 'event_deleted',
 }
 
 @Injectable()
@@ -18,27 +28,38 @@ export class NotificationsService {
         private notificationsRepo: Repository<Notification>,
         @InjectRepository(UserSession)
         private userSessionsRepo: Repository<UserSession>,
+        @InjectRepository(UserProfile)
+        private userProfileRepo: Repository<UserProfile>,
+        @InjectRepository(UserCategory)
+        private userCategoryRepo: Repository<UserCategory>,
     ) { }
 
     /**
      * Валидация токена пользователя для WebSocket
+     * ИСПРАВЛЕНО: Добавлена проверка существования сессии в БД
      */
     async validateUserToken(token: string) {
         try {
-            // Убираем Bearer если есть
             const cleanToken = token.replace('Bearer ', '').trim();
 
-            // Ищем сессию по токену
+            // Проверяем существование сессии в БД
             const session = await this.userSessionsRepo.findOne({
                 where: { sessionToken: cleanToken },
             });
 
             if (!session) return null;
 
-            // Получаем категории пользователя
-            // TODO: В будущем можно добавить отдельную таблицу для категорий пользователей
-            // Пока используем дефолтные категории из контекста пользователя
-            const categories = await this.getUserCategories(session.id, session.schoolId);
+            // Проверяем что сессия не истекла (lastActive не старше 24 часов)
+            const sessionAge = Date.now() - new Date(session.lastActive).getTime();
+            const maxAge = 24 * 60 * 60 * 1000; // 24 часа
+            if (sessionAge > maxAge) {
+                return null;
+            }
+
+            const categories = await this.getUserCategoriesByProfile(
+                session.schoolId,
+                session.fullName,
+            );
 
             return {
                 id: session.id,
@@ -53,20 +74,30 @@ export class NotificationsService {
     }
 
     /**
-     * Получить категории пользователя
-     * TODO: Реализовать получение категорий из базы данных
+     * Получить категории пользователя по профилю
      */
-    private async getUserCategories(
-        userId: number,
+    private async getUserCategoriesByProfile(
         schoolId: number,
+        fullName: string,
     ): Promise<string[]> {
-        // Временная заглушка - возвращаем все категории
-        // В реальности нужно получать из таблицы user_categories или similar
-        return ['Учителя', 'Администрация']; // дефолтные категории
+        const profile = await this.userProfileRepo.findOne({
+            where: { schoolId, fullName },
+        });
+
+        if (!profile) {
+            return [];
+        }
+
+        const userCategories = await this.userCategoryRepo.find({
+            where: { userProfileId: profile.id },
+            relations: ['category'],
+        });
+
+        return userCategories.map((uc) => uc.category.categoryName);
     }
 
     /**
-     * Создание уведомления
+     * Создание уведомления для задачи
      */
     async createNotification(
         schoolId: number,
@@ -80,6 +111,32 @@ export class NotificationsService {
                 schoolId,
                 recipientCategory: category,
                 taskId,
+                eventId: null,
+                notificationType: type,
+                message,
+                isRead: false,
+            }),
+        );
+
+        return this.notificationsRepo.save(notifications);
+    }
+
+    /**
+     * Создание уведомления для мероприятия
+     */
+    async createEventNotification(
+        schoolId: number,
+        recipientCategories: string[],
+        eventId: number,
+        type: NotificationType,
+        message: string,
+    ) {
+        const notifications = recipientCategories.map((category) =>
+            this.notificationsRepo.create({
+                schoolId,
+                recipientCategory: category,
+                taskId: null,
+                eventId,
                 notificationType: type,
                 message,
                 isRead: false,
@@ -101,7 +158,7 @@ export class NotificationsService {
             return [];
         }
 
-        return this.notificationsRepo
+        const notifications = await this.notificationsRepo
             .createQueryBuilder('notification')
             .where('notification.schoolId = :schoolId', { schoolId })
             .andWhere('notification.recipientCategory IN (:...categories)', {
@@ -111,6 +168,12 @@ export class NotificationsService {
             .orderBy('notification.createdAt', 'DESC')
             .limit(50)
             .getMany();
+
+        // Преобразуем даты в ISO строки для корректной передачи
+        return notifications.map(n => ({
+            ...n,
+            createdAt: n.createdAt.toISOString(),
+        }));
     }
 
     /**
@@ -126,7 +189,7 @@ export class NotificationsService {
             return [];
         }
 
-        return this.notificationsRepo
+        const notifications = await this.notificationsRepo
             .createQueryBuilder('notification')
             .where('notification.schoolId = :schoolId', { schoolId })
             .andWhere('notification.recipientCategory IN (:...categories)', {
@@ -135,12 +198,43 @@ export class NotificationsService {
             .orderBy('notification.createdAt', 'DESC')
             .limit(limit)
             .getMany();
+
+        // Преобразуем даты в ISO строки
+        return notifications.map(n => ({
+            ...n,
+            createdAt: n.createdAt.toISOString(),
+        }));
     }
 
     /**
      * Отметка уведомления как прочитанного
+     * ИСПРАВЛЕНО: Добавлена проверка принадлежности (опциональная)
      */
-    async markAsRead(notificationId: number, userId: number) {
+    async markAsRead(
+        notificationId: number,
+        userId: number,
+        schoolId?: number,
+        userCategories?: string[],
+    ) {
+        const notification = await this.notificationsRepo.findOne({
+            where: { id: notificationId },
+        });
+
+        if (!notification) {
+            throw new ForbiddenException('Уведомление не найдено');
+        }
+
+        // Проверяем принадлежность только если переданы параметры
+        if (schoolId !== undefined && notification.schoolId !== schoolId) {
+            throw new ForbiddenException('Нет доступа к этому уведомлению');
+        }
+
+        if (userCategories && userCategories.length > 0 && notification.recipientCategory) {
+            if (!userCategories.includes(notification.recipientCategory)) {
+                throw new ForbiddenException('Нет доступа к этому уведомлению');
+            }
+        }
+
         await this.notificationsRepo.update(
             { id: notificationId },
             { isRead: true },
@@ -171,7 +265,6 @@ export class NotificationsService {
 
     /**
      * Удаление старых уведомлений (старше 30 дней)
-     * Рекомендуется запускать через Cron
      */
     async cleanupOldNotifications(daysOld: number = 30) {
         const cutoffDate = new Date();
@@ -210,23 +303,57 @@ export class NotificationsService {
 
     /**
      * Удалить уведомление
+     * ИСПРАВЛЕНО: Добавлена проверка принадлежности
      */
-    async deleteNotification(notificationId: number) {
+    async deleteNotification(
+        notificationId: number,
+        schoolId: number,
+        userCategories: string[],
+    ) {
+        const notification = await this.notificationsRepo.findOne({
+            where: { id: notificationId },
+        });
+
+        if (!notification) {
+            throw new ForbiddenException('Уведомление не найдено');
+        }
+
+        if (notification.schoolId !== schoolId) {
+            throw new ForbiddenException('Нет доступа к этому уведомлению');
+        }
+
+        if (notification.recipientCategory && !userCategories.includes(notification.recipientCategory)) {
+            throw new ForbiddenException('Нет доступа к этому уведомлению');
+        }
+
         await this.notificationsRepo.delete({ id: notificationId });
         return { success: true };
     }
 
     /**
-     * Удалить все уведомления для категорий
+     * Удалить все прочитанные уведомления пользователя
      */
-    async deleteAllForCategories(schoolId: number, categories: string[]) {
+    async deleteReadNotificationsForUser(schoolId: number, categories: string[]) {
+        if (!categories || categories.length === 0) {
+            return { success: true, deleted: 0 };
+        }
+
         const result = await this.notificationsRepo
             .createQueryBuilder()
             .delete()
             .where('schoolId = :schoolId', { schoolId })
             .andWhere('recipientCategory IN (:...categories)', { categories })
+            .andWhere('isRead = true')
             .execute();
 
         return { success: true, deleted: result.affected || 0 };
+    }
+
+    /**
+     * Удалить все уведомления для категорий (старый метод, оставлен для совместимости)
+     * @deprecated Use deleteReadNotificationsForUser instead
+     */
+    async deleteAllForCategories(schoolId: number, categories: string[]) {
+        return this.deleteReadNotificationsForUser(schoolId, categories);
     }
 }

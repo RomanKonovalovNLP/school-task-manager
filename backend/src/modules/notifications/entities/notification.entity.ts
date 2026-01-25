@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { School } from '../../schools/entities/school.entity';
 import { Task } from '../../tasks/entities/task.entity';
+import { Event } from '../../events/entities/event.entity';
 
 @Entity('notifications')
 export class Notification {
@@ -23,10 +24,14 @@ export class Notification {
     @Column({ name: 'task_id', nullable: true })
     taskId: number | null;
 
+    // ✅ НОВОЕ: Связь с мероприятием
+    @Column({ name: 'event_id', nullable: true })
+    eventId: number | null;
+
     @Column({
         name: 'notification_type',
         length: 50,
-        comment: 'new_task, deadline_changed, task_deleted, task_assigned',
+        comment: 'new_task, deadline_changed, task_deleted, task_assigned, new_event, event_updated, event_date_changed',
     })
     notificationType: string;
 
@@ -36,7 +41,8 @@ export class Notification {
     @Column({ name: 'is_read', default: false })
     isRead: boolean;
 
-    @CreateDateColumn({ name: 'created_at' })
+    // ✅ ИСПРАВЛЕНИЕ: Используем timestamptz для корректного timezone
+    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
     createdAt: Date;
 
     // Relations
@@ -47,4 +53,9 @@ export class Notification {
     @ManyToOne(() => Task, { onDelete: 'CASCADE', nullable: true })
     @JoinColumn({ name: 'task_id' })
     task: Task;
+
+    // ✅ НОВОЕ: Связь с мероприятием
+    @ManyToOne(() => Event, { onDelete: 'CASCADE', nullable: true })
+    @JoinColumn({ name: 'event_id' })
+    event: Event;
 }

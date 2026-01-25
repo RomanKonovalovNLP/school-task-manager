@@ -9,7 +9,14 @@ import {
     UseGuards,
     Query,
     ParseIntPipe,
+    UseInterceptors,
+    UploadedFile,
+    Res,
+    StreamableFile,
+    BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
@@ -17,43 +24,47 @@ import { TaskFilterDto } from './dto/task-filter.dto';
 import { SchoolAuthGuard } from '../../common/guards/school-auth.guard';
 import { AdminGuard } from '../../common/guards/admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import * as fs from 'fs';
+import * as path from 'path';
+
+// Директория для хранения файлов
+const UPLOADS_DIR = path.resolve(process.cwd(), 'uploads');
 
 @Controller('tasks')
 @UseGuards(SchoolAuthGuard)
 export class TasksController {
-    constructor(private readonly tasksService: TasksService) { }
+    constructor(private readonly tasksService: TasksService) {}
 
-    /**
-     * Создать новую таску
-     * POST /tasks
-     */
     @Post()
     create(@Body() createTaskDto: CreateTaskDto, @CurrentUser() user: any) {
         return this.tasksService.create(createTaskDto, user);
     }
 
-    /**
-     * Получить все таски школы
-     * GET /tasks
-     */
     @Get()
     findAll(@CurrentUser() user: any, @Query() filters: TaskFilterDto) {
         return this.tasksService.findAll(user, filters);
     }
 
+    // ==================== ИСПРАВЛЕНИЕ: Статические роуты ПЕРЕД динамическими ====================
+
     /**
-     * Получить таску по ID
-     * GET /tasks/:id
+     * Удалить все просроченные задачи (только админ)
+     * DELETE /tasks/overdue/all
+     * ИСПРАВЛЕНО: Перемещено ВЫШЕ /tasks/:id
      */
+    @Delete('overdue/all')
+    @UseGuards(AdminGuard)
+    removeOverdue(@CurrentUser() user: any) {
+        return this.tasksService.removeOverdue(user);
+    }
+
+    // ==================== Динамические роуты с :id ====================
+
     @Get(':id')
     findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: any) {
         return this.tasksService.findOne(id, user);
     }
 
-    /**
-     * Обновить таску
-     * PATCH /tasks/:id
-     */
     @Patch(':id')
     update(
         @Param('id', ParseIntPipe) id: number,
@@ -63,29 +74,11 @@ export class TasksController {
         return this.tasksService.update(id, updateTaskDto, user);
     }
 
-    /**
-     * Удалить таску
-     * DELETE /tasks/:id
-     */
     @Delete(':id')
     remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: any) {
         return this.tasksService.remove(id, user);
     }
 
-    /**
-     * Удалить все просроченные таски (только админы)
-     * DELETE /tasks/overdue/all
-     */
-    @Delete('overdue/all')
-    @UseGuards(AdminGuard)
-    removeOverdue(@CurrentUser() user: any) {
-        return this.tasksService.removeOverdue(user);
-    }
-
-    /**
-     * Отметить таску как просмотренную
-     * POST /tasks/:id/view
-     */
     @Post(':id/view')
     markAsViewed(
         @Param('id', ParseIntPipe) id: number,
@@ -94,12 +87,121 @@ export class TasksController {
         return this.tasksService.markAsViewed(id, user);
     }
 
-    /**
-     * Получить список просмотревших таску
-     * GET /tasks/:id/views
-     */
     @Get(':id/views')
     getViews(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: any) {
         return this.tasksService.getViews(id, user);
+    }
+
+    @Post(':id/toggle-completion')
+    async toggleCompletion(
+        @Param('id', ParseIntPipe) id: number,
+        @CurrentUser() user: any,
+    ) {
+        return this.tasksService.toggleCompletion(id, user);
+    }
+
+    /**
+     * Получить статус выполнения задачи
+     * ИСПРАВЛЕНО: Добавлены имена выполнивших для создателя/админа
+     */
+    @Get(':id/completion-status')
+    async getCompletionStatus(
+        @Param('id', ParseIntPipe) id: number,
+        @CurrentUser() user: any,
+    ) {
+        return this.tasksService.getCompletionStatusDetailed(id, user);
+    }
+
+    // ==================== ВЛОЖЕНИЯ ДЛЯ ЗАДАЧ ====================
+
+    /**
+     * Загрузить вложение к задаче
+     * POST /tasks/:id/attachments
+     */
+    @Post(':id/attachments')
+    @UseInterceptors(FileInterceptor('file'))
+    uploadAttachment(
+        @Param('id', ParseIntPipe) id: number,
+        @UploadedFile() file: any,
+        @CurrentUser() user: any,
+    ) {
+        return this.tasksService.uploadAttachment(id, file, user);
+    }
+
+    /**
+     * Получить список вложений задачи
+     * GET /tasks/:id/attachments
+     */
+    @Get(':id/attachments')
+    getAttachments(
+        @Param('id', ParseIntPipe) id: number,
+        @CurrentUser() user: any,
+    ) {
+        return this.tasksService.getAttachments(id, user);
+    }
+
+    /**
+     * Скачать вложение
+     * GET /tasks/:id/attachments/:attachmentId/download
+     * ИСПРАВЛЕНО: Правильная кодировка UTF-8 для имён файлов + защита от path traversal
+     */
+    @Get(':id/attachments/:attachmentId/download')
+    async downloadAttachment(
+        @Param('id', ParseIntPipe) id: number,
+        @Param('attachmentId', ParseIntPipe) attachmentId: number,
+        @CurrentUser() user: any,
+        @Res({ passthrough: true }) res: Response,
+    ) {
+        const attachment = await this.tasksService.downloadAttachment(id, attachmentId, user);
+
+        // ИСПРАВЛЕНИЕ: Вычисляем путь к файлу из fileName (т.к. entity не хранит filePath)
+        const filePath = path.join(UPLOADS_DIR, 'tasks', attachment.fileName);
+        const resolvedPath = path.resolve(filePath);
+        
+        // Проверка path traversal - файл должен быть в разрешённой директории
+        if (!resolvedPath.startsWith(UPLOADS_DIR)) {
+            throw new BadRequestException('Недопустимый путь к файлу');
+        }
+
+        if (!fs.existsSync(resolvedPath)) {
+            throw new BadRequestException('Файл не найден');
+        }
+
+        const file = fs.createReadStream(resolvedPath);
+
+        // ИСПРАВЛЕНИЕ: Правильная кодировка UTF-8 для имён файлов
+        // Используем оригинальное имя из БД напрямую
+        const originalName = attachment.originalName;
+
+        // RFC 5987 кодирование для поддержки unicode в Content-Disposition
+        const encodedFilename = encodeURIComponent(originalName)
+            .replace(/'/g, '%27')
+            .replace(/\(/g, '%28')
+            .replace(/\)/g, '%29')
+            .replace(/\*/g, '%2A');
+
+        // Fallback имя для старых браузеров (только ASCII)
+        const asciiFilename = originalName.replace(/[^\x20-\x7E]/g, '_');
+
+        res.set({
+            'Content-Type': attachment.mimeType || 'application/octet-stream',
+            'Content-Disposition': `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`,
+            'Cache-Control': 'no-cache',
+        });
+
+        return new StreamableFile(file);
+    }
+
+    /**
+     * Удалить вложение
+     * DELETE /tasks/:id/attachments/:attachmentId
+     */
+    @Delete(':id/attachments/:attachmentId')
+    deleteAttachment(
+        @Param('id', ParseIntPipe) id: number,
+        @Param('attachmentId', ParseIntPipe) attachmentId: number,
+        @CurrentUser() user: any,
+    ) {
+        return this.tasksService.deleteAttachment(id, attachmentId, user);
     }
 }

@@ -21,28 +21,21 @@ import { CreateGroupDto } from './dto/create-group.dto';
 @Controller('task-positions')
 @UseGuards(SchoolAuthGuard)
 export class TaskPositionsController {
-    constructor(private readonly taskPositionsService: TaskPositionsService) { }
+    constructor(private readonly taskPositionsService: TaskPositionsService) {}
 
     /**
      * Получить все позиции тасок и группы для текущего пользователя
      * GET /task-positions
-     * 
-     * @returns {
-     *   positions: TaskPosition[],
-     *   groups: TaskGroup[]
-     * }
      */
     @Get()
     @HttpCode(HttpStatus.OK)
     getAllPositions(@CurrentUser() user: any) {
-        return this.taskPositionsService.getAllPositions(user.sessionId, user.schoolId);
+        return this.taskPositionsService.getAllPositions(user);
     }
 
     /**
      * Обновить позицию таски
      * PATCH /task-positions/:taskId
-     * 
-     * Body: { x: number, y: number }
      */
     @Patch(':taskId')
     @HttpCode(HttpStatus.OK)
@@ -51,34 +44,22 @@ export class TaskPositionsController {
         @Body() updateDto: UpdatePositionDto,
         @CurrentUser() user: any,
     ) {
-        return this.taskPositionsService.updatePosition(
-            taskId,
-            updateDto,
-            user.sessionId,
-        );
+        return this.taskPositionsService.updatePosition(taskId, updateDto, user);
     }
 
     /**
      * Создать новую группу тасок
      * POST /task-positions/group
-     * 
-     * Body: { taskIds: number[], x: number, y: number }
      */
     @Post('group')
     @HttpCode(HttpStatus.CREATED)
     createGroup(@Body() createGroupDto: CreateGroupDto, @CurrentUser() user: any) {
-        return this.taskPositionsService.createGroup(
-            createGroupDto,
-            user.sessionId,
-            user.schoolId,
-        );
+        return this.taskPositionsService.createGroup(createGroupDto, user);
     }
 
     /**
      * Разгруппировать все таски в группе
      * DELETE /task-positions/group/:groupId
-     * 
-     * Автоматически удаляет группу и сбрасывает groupId всех тасок
      */
     @Delete('group/:groupId')
     @HttpCode(HttpStatus.OK)
@@ -86,14 +67,12 @@ export class TaskPositionsController {
         @Param('groupId', ParseIntPipe) groupId: number,
         @CurrentUser() user: any,
     ) {
-        return this.taskPositionsService.ungroupTasks(groupId, user.sessionId);
+        return this.taskPositionsService.ungroupTasks(groupId, user);
     }
 
     /**
-     * Переместить всю группу (все таски внутри нее)
+     * Переместить всю группу
      * PATCH /task-positions/group/:groupId/move
-     * 
-     * Body: { x: number, y: number }
      */
     @Patch('group/:groupId/move')
     @HttpCode(HttpStatus.OK)
@@ -102,18 +81,12 @@ export class TaskPositionsController {
         @Body() updateDto: UpdatePositionDto,
         @CurrentUser() user: any,
     ) {
-        return this.taskPositionsService.moveGroup(
-            groupId,
-            updateDto,
-            user.sessionId,
-        );
+        return this.taskPositionsService.moveGroup(groupId, updateDto, user);
     }
 
     /**
      * Добавить таску в существующую группу
      * POST /task-positions/group/:groupId/task/:taskId
-     * 
-     * Таска автоматически перемещается к позиции группы
      */
     @Post('group/:groupId/task/:taskId')
     @HttpCode(HttpStatus.OK)
@@ -122,22 +95,12 @@ export class TaskPositionsController {
         @Param('taskId', ParseIntPipe) taskId: number,
         @CurrentUser() user: any,
     ) {
-        return this.taskPositionsService.addTaskToGroup(
-            groupId,
-            taskId,
-            user.sessionId,
-        );
+        return this.taskPositionsService.addTaskToGroup(groupId, taskId, user);
     }
 
     /**
      * Удалить таску из группы
-     * DELETE /task-positions/group/:groupId/task/:taskId?x=300&y=400
-     * 
-     * Query params:
-     * - x: новая X координата таски
-     * - y: новая Y координата таски
-     * 
-     * Если в группе останется ≤1 таска, группа автоматически удаляется
+     * DELETE /task-positions/group/:groupId/task/:taskId
      */
     @Delete('group/:groupId/task/:taskId')
     @HttpCode(HttpStatus.OK)
@@ -148,25 +111,12 @@ export class TaskPositionsController {
         @Query('y', ParseIntPipe) newY: number,
         @CurrentUser() user: any,
     ) {
-        return this.taskPositionsService.removeTaskFromGroup(
-            groupId,
-            taskId,
-            newX,
-            newY,
-            user.sessionId,
-        );
+        return this.taskPositionsService.removeTaskFromGroup(groupId, taskId, newX, newY, user);
     }
 
     /**
-     * Получить информацию о конкретной группе
+     * Получить информацию о группе
      * GET /task-positions/group/:groupId
-     * 
-     * @returns {
-     *   id: number,
-     *   position: { x: number, y: number },
-     *   taskIds: number[],
-     *   taskCount: number
-     * }
      */
     @Get('group/:groupId')
     @HttpCode(HttpStatus.OK)
@@ -174,16 +124,12 @@ export class TaskPositionsController {
         @Param('groupId', ParseIntPipe) groupId: number,
         @CurrentUser() user: any,
     ) {
-        return this.taskPositionsService.getGroupInfo(groupId, user.sessionId);
+        return this.taskPositionsService.getGroupInfo(groupId, user);
     }
 
     /**
-     * Массовое обновление позиций (полезно для синхронизации)
+     * Массовое обновление позиций
      * PATCH /task-positions/bulk
-     * 
-     * Body: {
-     *   updates: Array<{ taskId: number, x: number, y: number }>
-     * }
      */
     @Patch('bulk')
     @HttpCode(HttpStatus.OK)
@@ -191,24 +137,16 @@ export class TaskPositionsController {
         @Body() body: { updates: Array<{ taskId: number; x: number; y: number }> },
         @CurrentUser() user: any,
     ) {
-        return this.taskPositionsService.bulkUpdatePositions(
-            body.updates,
-            user.sessionId,
-        );
+        return this.taskPositionsService.bulkUpdatePositions(body.updates, user);
     }
 
     /**
-     * Сбросить все позиции к дефолтному grid layout
+     * Сбросить все позиции к дефолтному layout
      * POST /task-positions/reset
-     * 
-     * Полезно для новых пользователей или для сброса раскладки
      */
     @Post('reset')
     @HttpCode(HttpStatus.OK)
     resetPositions(@CurrentUser() user: any) {
-        return this.taskPositionsService.resetToDefaultLayout(
-            user.sessionId,
-            user.schoolId,
-        );
+        return this.taskPositionsService.resetToDefaultLayout(user);
     }
 }

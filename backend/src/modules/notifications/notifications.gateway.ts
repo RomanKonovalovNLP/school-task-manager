@@ -6,9 +6,11 @@ import {
     OnGatewayDisconnect,
     ConnectedSocket,
     MessageBody,
+    OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { NotificationsService } from './notifications.service';
+import { Logger } from '@nestjs/common';
 
 interface AuthenticatedSocket extends Socket {
     user?: {
@@ -27,9 +29,11 @@ interface AuthenticatedSocket extends Socket {
     namespace: '/notifications',
 })
 export class NotificationsGateway
-    implements OnGatewayConnection, OnGatewayDisconnect {
+    implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit {
     @WebSocketServer()
     server: Server;
+
+    private readonly logger = new Logger(NotificationsGateway.name);
 
     // Map: schoolId -> Set<socketId>
     private schoolRooms = new Map<number, Set<string>>();
@@ -37,33 +41,38 @@ export class NotificationsGateway
     // Map: socketId -> user data
     private connectedUsers = new Map<string, any>();
 
+    // Флаг инициализации
+    private isServerInitialized = false;
+
     constructor(private notificationsService: NotificationsService) { }
+
+    afterInit(server: Server) {
+        this.isServerInitialized = true;
+        this.logger.log('WebSocket Gateway initialized successfully');
+    }
 
     async handleConnection(client: AuthenticatedSocket) {
         try {
-            console.log(`Client attempting to connect: ${client.id}`);
+            this.logger.log(`Client attempting to connect: ${client.id}`);
 
-            // Извлекаем токен из handshake
             const token =
                 client.handshake.auth.token ||
                 client.handshake.headers.authorization;
 
             if (!token) {
-                console.log('No token provided, disconnecting client');
+                this.logger.warn('No token provided, disconnecting client');
                 client.disconnect();
                 return;
             }
 
-            // Валидируем токен и получаем данные пользователя
             const user = await this.notificationsService.validateUserToken(token);
 
             if (!user) {
-                console.log('Invalid token, disconnecting client');
+                this.logger.warn('Invalid token, disconnecting client');
                 client.disconnect();
                 return;
             }
 
-            // Сохраняем данные пользователя
             client.user = user;
             this.connectedUsers.set(client.id, user);
 
@@ -71,14 +80,22 @@ export class NotificationsGateway
             const schoolRoom = `school_${user.schoolId}`;
             client.join(schoolRoom);
 
+            // Добавляем в комнаты категорий
+            if (user.categories && Array.isArray(user.categories)) {
+                user.categories.forEach((category) => {
+                    const categoryRoom = `school_${user.schoolId}_category_${category}`;
+                    client.join(categoryRoom);
+                });
+            }
+
             // Обновляем Map комнат
             if (!this.schoolRooms.has(user.schoolId)) {
                 this.schoolRooms.set(user.schoolId, new Set());
             }
             this.schoolRooms.get(user.schoolId)!.add(client.id);
 
-            console.log(
-                `User ${user.fullName} connected to school ${user.schoolId}`,
+            this.logger.log(
+                `User ${user.fullName} connected to school ${user.schoolId} with categories: ${user.categories?.join(', ')}`,
             );
 
             // Отправляем накопленные уведомления
@@ -91,7 +108,7 @@ export class NotificationsGateway
 
             client.emit('unread_notifications', unreadNotifications);
         } catch (error) {
-            console.error('Connection error:', error);
+            this.logger.error('Connection error:', error);
             client.disconnect();
         }
     }
@@ -100,7 +117,6 @@ export class NotificationsGateway
         const user = this.connectedUsers.get(client.id);
 
         if (user) {
-            // Удаляем из комнаты школы
             const schoolSockets = this.schoolRooms.get(user.schoolId);
             if (schoolSockets) {
                 schoolSockets.delete(client.id);
@@ -109,7 +125,7 @@ export class NotificationsGateway
                 }
             }
 
-            console.log(
+            this.logger.log(
                 `User ${user.fullName} disconnected from school ${user.schoolId}`,
             );
         }
@@ -143,36 +159,69 @@ export class NotificationsGateway
     }
 
     /**
-     * Отправка уведомления всем пользователям школы с определенными категориями
+     * ИСПРАВЛЕНИЕ: Отправка ОДНОГО уведомления каждому пользователю
+     * (даже если он в нескольких категориях)
+     */
+    sendUniqueNotificationToCategories(
+        schoolId: number,
+        categories: string[],
+        notification: any,
+    ) {
+        if (!this.isServerInitialized || !this.server) {
+            this.logger.warn('Server not initialized yet, skipping real-time notification');
+            return;
+        }
+
+        try {
+            // Собираем уникальных пользователей, которым нужно отправить уведомление
+            const notifiedSocketIds = new Set<string>();
+            const schoolSockets = this.schoolRooms.get(schoolId);
+
+            if (!schoolSockets) {
+                this.logger.log(`No users online for school ${schoolId}`);
+                return;
+            }
+
+            // Проходим по всем подключенным пользователям школы
+            for (const socketId of schoolSockets) {
+                // Если уже отправили этому сокету - пропускаем
+                if (notifiedSocketIds.has(socketId)) {
+                    continue;
+                }
+
+                const user = this.connectedUsers.get(socketId);
+                if (!user || !user.categories) continue;
+
+                // Проверяем, есть ли пересечение категорий пользователя с категориями задачи
+                const hasMatchingCategory = user.categories.some(
+                    (userCat: string) => categories.includes(userCat)
+                );
+
+                if (hasMatchingCategory) {
+                    // Отправляем ОДНО уведомление этому пользователю
+                    this.server.to(socketId).emit('new_notification', notification);
+                    notifiedSocketIds.add(socketId);
+                    this.logger.log(`Sent unique notification to user ${user.fullName}`);
+                }
+            }
+
+            this.logger.log(
+                `Sent notifications to ${notifiedSocketIds.size} unique users for school ${schoolId}`
+            );
+        } catch (error) {
+            this.logger.error('Error sending notification to categories:', error);
+        }
+    }
+
+    /**
+     * Старый метод - оставляем для совместимости, но теперь вызывает новый
      */
     async sendNotificationToCategories(
         schoolId: number,
         categories: string[],
         notification: any,
     ) {
-        const schoolSockets = this.schoolRooms.get(schoolId);
-
-        if (!schoolSockets || schoolSockets.size === 0) {
-            return; // никто не онлайн
-        }
-
-        // Фильтруем сокеты пользователей с нужными категориями
-        schoolSockets.forEach((socketId) => {
-            const socket = this.server.sockets.sockets.get(
-                socketId,
-            ) as AuthenticatedSocket;
-
-            if (!socket || !socket.user) return;
-
-            // Проверяем, есть ли у пользователя хотя бы одна из категорий
-            const hasMatchingCategory = socket.user.categories.some((cat) =>
-                categories.includes(cat),
-            );
-
-            if (hasMatchingCategory) {
-                socket.emit('new_notification', notification);
-            }
-        });
+        this.sendUniqueNotificationToCategories(schoolId, categories, notification);
     }
 
     /**
@@ -183,39 +232,82 @@ export class NotificationsGateway
         schoolId: number,
         notification: any,
     ) {
-        const schoolSockets = this.schoolRooms.get(schoolId);
+        if (!this.isServerInitialized || !this.server) {
+            this.logger.warn('Server not initialized yet, skipping notification');
+            return;
+        }
 
-        if (!schoolSockets) return;
+        try {
+            const schoolSockets = this.schoolRooms.get(schoolId);
 
-        schoolSockets.forEach((socketId) => {
-            const socket = this.server.sockets.sockets.get(
-                socketId,
-            ) as AuthenticatedSocket;
-
-            if (socket && socket.user && socket.user.id === userId) {
-                socket.emit('new_notification', notification);
+            if (!schoolSockets) {
+                this.logger.log(`No sockets found for school ${schoolId}`);
+                return;
             }
-        });
+
+            for (const socketId of schoolSockets) {
+                const user = this.connectedUsers.get(socketId);
+                if (user && user.id === userId) {
+                    this.server.to(socketId).emit('new_notification', notification);
+                    this.logger.log(`Sent notification to user ${userId} via socket ${socketId}`);
+                    return;
+                }
+            }
+
+            this.logger.log(`User ${userId} not found in school ${schoolId}`);
+        } catch (error) {
+            this.logger.error('Error sending notification to user:', error);
+        }
     }
 
     /**
      * Broadcast изменений в таске (для синхронизации canvas)
      */
     broadcastTaskUpdate(schoolId: number, taskUpdate: any) {
-        this.server.to(`school_${schoolId}`).emit('task_updated', taskUpdate);
+        if (!this.isServerInitialized || !this.server) {
+            this.logger.warn('Server not initialized, skipping task update broadcast');
+            return;
+        }
+
+        try {
+            this.server.to(`school_${schoolId}`).emit('task_updated', taskUpdate);
+            this.logger.log(`Broadcasted task update to school ${schoolId}`);
+        } catch (error) {
+            this.logger.error('Error broadcasting task update:', error);
+        }
     }
 
     /**
      * Broadcast удаления таски
      */
     broadcastTaskDelete(schoolId: number, taskId: number) {
-        this.server.to(`school_${schoolId}`).emit('task_deleted', { taskId });
+        if (!this.isServerInitialized || !this.server) {
+            this.logger.warn('Server not initialized, skipping task delete broadcast');
+            return;
+        }
+
+        try {
+            this.server.to(`school_${schoolId}`).emit('task_deleted', { taskId });
+            this.logger.log(`Broadcasted task delete to school ${schoolId}, taskId: ${taskId}`);
+        } catch (error) {
+            this.logger.error('Error broadcasting task delete:', error);
+        }
     }
 
     /**
      * Broadcast создания новой таски
      */
     broadcastTaskCreated(schoolId: number, task: any) {
-        this.server.to(`school_${schoolId}`).emit('task_created', task);
+        if (!this.isServerInitialized || !this.server) {
+            this.logger.warn('Server not initialized, skipping task created broadcast');
+            return;
+        }
+
+        try {
+            this.server.to(`school_${schoolId}`).emit('task_created', task);
+            this.logger.log(`Broadcasted task created to school ${schoolId}`);
+        } catch (error) {
+            this.logger.error('Error broadcasting task created:', error);
+        }
     }
 }

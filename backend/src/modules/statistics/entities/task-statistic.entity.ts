@@ -33,7 +33,7 @@ export class TaskStatistic {
     tasksByCategory: Record<string, number>;
 
     @Column({ name: 'avg_completion_time', type: 'float', nullable: true })
-    avgCompletionTime: number | null;
+    avgCompletionTime: number | null;  // ← ИСПРАВЛЕНО: добавлен | null
 
     @CreateDateColumn({ name: 'created_at' })
     createdAt: Date;

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { StatisticsService } from './statistics.service';
 import { SchoolAuthGuard } from '../../common/guards/school-auth.guard';
+import { AdminGuard } from '../../common/guards/admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('statistics')
@@ -17,7 +18,7 @@ export class StatisticsController {
     /**
      * Получить общую статистику
      * GET /statistics
-     * Query params: startDate, endDate (optional)
+     * Query params: startDate, endDate (optional) - строки в формате ISO
      */
     @Get()
     async getStatistics(
@@ -25,10 +26,7 @@ export class StatisticsController {
         @Query('startDate') startDate?: string,
         @Query('endDate') endDate?: string,
     ) {
-        const start = startDate ? new Date(startDate) : undefined;
-        const end = endDate ? new Date(endDate) : undefined;
-
-        return this.statisticsService.getStatistics(user.schoolId, start, end);
+        return this.statisticsService.getStatistics(user.schoolId, startDate, endDate);
     }
 
     /**
@@ -59,5 +57,27 @@ export class StatisticsController {
     @Get('creators')
     async getCreatorStatistics(@CurrentUser() user: any) {
         return this.statisticsService.getCreatorStatistics(user.schoolId);
+    }
+
+    // ==================== НОВОЕ: Расширенная статистика для админов ====================
+
+    /**
+     * Получить статистику выполнения по пользователям (только для админов)
+     * GET /statistics/users
+     */
+    @Get('users')
+    @UseGuards(AdminGuard)
+    async getUserStatistics(@CurrentUser() user: any) {
+        return this.statisticsService.getUserCompletionStatistics(user.schoolId);
+    }
+
+    /**
+     * Получить детальную статистику по каждой задаче (только для админов)
+     * GET /statistics/tasks-completion
+     */
+    @Get('tasks-completion')
+    @UseGuards(AdminGuard)
+    async getTasksCompletionStatistics(@CurrentUser() user: any) {
+        return this.statisticsService.getTasksCompletionStatistics(user.schoolId);
     }
 }

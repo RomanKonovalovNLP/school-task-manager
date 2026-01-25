@@ -8,7 +8,7 @@ import {
     JoinColumn,
 } from 'typeorm';
 import { School } from '../../schools/entities/school.entity';
-import { UserSession } from '../../auth/entities/user-session.entity';
+import { UserProfile } from '../../users/entities/user-profile.entity';
 
 @Entity('task_groups')
 export class TaskGroup {
@@ -22,12 +22,12 @@ export class TaskGroup {
     @JoinColumn({ name: 'school_id' })
     school: School;
 
-    @Column({ name: 'user_session_id' })
-    userSessionId: number;
+    @Column({ name: 'user_profile_id' })
+    userProfileId: number;
 
-    @ManyToOne(() => UserSession, { onDelete: 'CASCADE' })
-    @JoinColumn({ name: 'user_session_id' })
-    userSession: UserSession;
+    @ManyToOne(() => UserProfile, { onDelete: 'CASCADE' })
+    @JoinColumn({ name: 'user_profile_id' })
+    userProfile: UserProfile;
 
     @Column({ type: 'int', name: 'position_x' })
     positionX: number;

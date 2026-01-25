@@ -3,12 +3,21 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { FiltersService } from './filters.service';
 import { FiltersController } from './filters.controller';
 import { FilterCategory } from './entities/filter-category.entity';
-import { AuthModule } from '../auth/auth.module';
+import { UserCategory } from './entities/user-category.entity';
+import { UserProfile } from '../users/entities/user-profile.entity';
+import { UserSession } from '../auth/entities/user-session.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([FilterCategory]), AuthModule],
+  imports: [
+    TypeOrmModule.forFeature([
+      FilterCategory,
+      UserCategory,
+      UserProfile,
+      UserSession,
+    ]),
+  ],
   controllers: [FiltersController],
   providers: [FiltersService],
-  exports: [TypeOrmModule],
+  exports: [FiltersService, TypeOrmModule],
 })
 export class FiltersModule { }

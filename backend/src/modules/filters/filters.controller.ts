@@ -2,6 +2,7 @@ import {
     Controller,
     Get,
     Post,
+    Put,
     Delete,
     Body,
     Param,
@@ -18,45 +19,102 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 export class FiltersController {
     constructor(private readonly filtersService: FiltersService) { }
 
+    // ==================== СТАТИЧЕСКИЕ РОУТЫ (перед динамическими) ====================
+
     /**
-     * Получить все категории школы
+     * Получить категории текущего пользователя по профилю
+     * GET /filters/my-categories
+     * ИСПРАВЛЕНО: Перемещено ВЫШЕ /filters/:id
+     */
+    @Get('my-categories')
+    async getMyCategories(@CurrentUser() user: any) {
+        const categories = await this.filtersService.getUserCategories(
+            user.schoolId,
+            user.fullName,
+        );
+        return { categories };
+    }
+
+    /**
+     * Создать дефолтные категории (только админ)
+     * POST /filters/seed
+     * ИСПРАВЛЕНО: Добавлен AdminGuard
+     */
+    @Post('seed')
+    @UseGuards(AdminGuard)
+    async seed(@CurrentUser() user: any) {
+        await this.filtersService.seedCategories(user.schoolId);
+        return { success: true, message: 'Дефолтные категории созданы' };
+    }
+
+    /**
+     * Установить категории пользователя по профилю
+     * POST /filters/set-categories
+     * Body: { categoryIds: number[] }
+     */
+    @Post('set-categories')
+    async setCategories(
+        @CurrentUser() user: any,
+        @Body('categoryIds') categoryIds: number[],
+    ) {
+        await this.filtersService.setUserCategories(
+            user.schoolId,
+            user.fullName,
+            categoryIds,
+        );
+        return { success: true, message: 'Категории обновлены' };
+    }
+
+    // ==================== РОУТ БЕЗ ПАРАМЕТРА ====================
+
+    /**
+     * Получить все категории
      * GET /filters
      */
     @Get()
-    findAll(@CurrentUser() user: any) {
+    async findAll(@CurrentUser() user: any) {
         return this.filtersService.findAll(user.schoolId);
     }
 
     /**
-     * Создать новую категорию (только админы)
+     * Создать категорию (только админ)
      * POST /filters
+     * Body: { categoryName: string }
      */
     @Post()
     @UseGuards(AdminGuard)
-    create(
-        @Body('categoryName') categoryName: string,
+    async create(
         @CurrentUser() user: any,
+        @Body('categoryName') categoryName: string,
     ) {
-        return this.filtersService.create(user.schoolId, categoryName);
+        return this.filtersService.create(user.schoolId, categoryName, user.isAdmin);
+    }
+
+    // ==================== ДИНАМИЧЕСКИЕ РОУТЫ С :id ====================
+
+    /**
+     * Обновить категорию (только админ)
+     * PUT /filters/:id
+     * Body: { categoryName: string }
+     */
+    @Put(':id')
+    @UseGuards(AdminGuard)
+    async update(
+        @Param('id', ParseIntPipe) id: number,
+        @CurrentUser() user: any,
+        @Body('categoryName') categoryName: string,
+    ) {
+        return this.filtersService.update(id, user.schoolId, categoryName, user.isAdmin);
     }
 
     /**
-     * Удалить категорию (только админы)
+     * Удалить категорию (только админ)
      * DELETE /filters/:id
      */
     @Delete(':id')
     @UseGuards(AdminGuard)
-    remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: any) {
-        return this.filtersService.remove(id, user.schoolId);
-    }
-
-    /**
-     * Создать тестовые категории
-     * POST /filters/seed
-     */
-    @Post('seed')
-    @UseGuards(AdminGuard)
-    seedCategories(@CurrentUser() user: any) {
-        return this.filtersService.seedCategories(user.schoolId);
+    async remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: any) {
+        await this.filtersService.remove(id, user.schoolId, user.isAdmin);
+        return { success: true, message: 'Категория удалена' };
     }
 }

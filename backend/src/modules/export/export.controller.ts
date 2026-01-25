@@ -76,13 +76,11 @@ export class ExportController {
         @Query('startDate') startDate?: string,
         @Query('endDate') endDate?: string,
     ) {
-        const start = startDate ? new Date(startDate) : undefined;
-        const end = endDate ? new Date(endDate) : undefined;
-
+        // Передаём даты как строки напрямую в сервис
         const statistics = await this.statisticsService.getStatistics(
             user.schoolId,
-            start,
-            end,
+            startDate,
+            endDate,
         );
 
         const buffer = await this.exportService.exportStatisticsToExcel(

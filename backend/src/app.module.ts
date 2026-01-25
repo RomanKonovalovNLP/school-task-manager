@@ -14,8 +14,9 @@ import { FiltersModule } from './modules/filters/filters.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { StatisticsModule } from './modules/statistics/statistics.module';
 import { ExportModule } from './modules/export/export.module';
-
-
+import { UsersModule } from './modules/users/users.module';
+import { EventsModule } from './modules/events/events.module';
+import { SuperAdminModule } from './modules/super-admin/super-admin.module';
 
 @Module({
   imports: [
@@ -34,6 +35,8 @@ import { ExportModule } from './modules/export/export.module';
     // Планировщик задач
     ScheduleModule.forRoot(),
 
+    // Модули приложения
+    UsersModule,
     SchoolsModule,
     AdminsModule,
     AuthModule,
@@ -42,9 +45,11 @@ import { ExportModule } from './modules/export/export.module';
     FiltersModule,
     NotificationsModule,
     StatisticsModule,
-    ExportModule
+    ExportModule,
+    EventsModule,
+    SuperAdminModule,  // Модуль супер-админа
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule { }
+export class AppModule {}

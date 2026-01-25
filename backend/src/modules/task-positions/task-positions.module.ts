@@ -5,15 +5,16 @@ import { TaskPositionsService } from './task-positions.service';
 import { TaskPosition } from './entities/task-position.entity';
 import { TaskGroup } from './entities/task-group.entity';
 import { Task } from '../tasks/entities/task.entity';
+import { UserProfile } from '../users/entities/user-profile.entity';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([TaskPosition, TaskGroup, Task]),
+    TypeOrmModule.forFeature([TaskPosition, TaskGroup, Task, UserProfile]),
     AuthModule,
   ],
   controllers: [TaskPositionsController],
   providers: [TaskPositionsService],
   exports: [TypeOrmModule, TaskPositionsService],
 })
-export class TaskPositionsModule { }
+export class TaskPositionsModule {}

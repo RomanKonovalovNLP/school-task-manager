@@ -1,11 +1,11 @@
-import { IsInt, Min } from 'class-validator';
+import { IsNumber, Min } from 'class-validator';
 
 export class UpdatePositionDto {
-    @IsInt()
+    @IsNumber()
     @Min(0)
     x: number;
 
-    @IsInt()
+    @IsNumber()
     @Min(0)
     y: number;
 }

@@ -2,10 +2,14 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
-import * as crypto from 'crypto';
+import { v4 as uuidv4 } from 'uuid';
 import { School } from '../schools/entities/school.entity';
+// ИСПРАВЛЕНИЕ: Правильный путь к Admin entity (в модуле admins)
 import { Admin } from '../admins/entities/admin.entity';
 import { UserSession } from './entities/user-session.entity';
+import { UserProfile } from '../users/entities/user-profile.entity';
+import { UserCategory } from '../filters/entities/user-category.entity';
+import { FilterCategory } from '../filters/entities/filter-category.entity';
 import { LoginDto } from './dto/login.dto';
 import { AdminLoginDto } from './dto/admin-login.dto';
 
@@ -18,22 +22,46 @@ export class AuthService {
         private adminRepository: Repository<Admin>,
         @InjectRepository(UserSession)
         private sessionRepository: Repository<UserSession>,
-    ) { }
+        @InjectRepository(UserProfile)
+        private userProfileRepository: Repository<UserProfile>,
+        @InjectRepository(UserCategory)
+        private userCategoryRepository: Repository<UserCategory>,
+        @InjectRepository(FilterCategory)
+        private filterCategoryRepository: Repository<FilterCategory>,
+    ) {}
 
     /**
-     * Вход для гостя (обычного пользователя)
+     * Получить категории пользователя из профиля
+     */
+    private async getUserCategories(schoolId: number, fullName: string): Promise<string[]> {
+        const profile = await this.userProfileRepository.findOne({
+            where: { schoolId, fullName },
+        });
+
+        if (!profile) {
+            return [];
+        }
+
+        const userCategories = await this.userCategoryRepository.find({
+            where: { userProfileId: profile.id },
+            relations: ['category'],
+        });
+
+        return userCategories
+            .filter(uc => uc.category)
+            .map(uc => uc.category.categoryName);
+    }
+
+    /**
+     * Вход гостя (обычного пользователя)
      */
     async loginGuest(loginDto: LoginDto) {
-        // Найти школу по паролю
+        // Находим школу по паролю
         const schools = await this.schoolRepository.find();
         let school: School | null = null;
 
-        // Проверяем пароль для каждой школы (в реальности школа может быть одна)
         for (const s of schools) {
-            const isMatch = await bcrypt.compare(
-                loginDto.schoolPassword,
-                s.passwordHash,
-            );
+            const isMatch = await bcrypt.compare(loginDto.schoolPassword, s.passwordHash);
             if (isMatch) {
                 school = s;
                 break;
@@ -44,62 +72,54 @@ export class AuthService {
             throw new UnauthorizedException('Неверный пароль школы');
         }
 
-        // Проверить, есть ли уже активная сессия для этого пользователя
-        const existingSession = await this.sessionRepository.findOne({
+        // Создаём или обновляем сессию
+        const sessionToken = uuidv4();
+
+        let session = await this.sessionRepository.findOne({
             where: {
                 schoolId: school.id,
                 fullName: loginDto.fullName,
             },
         });
 
-        // Если есть - обновим токен
-        if (existingSession) {
-            existingSession.sessionToken = this.generateSessionToken();
-            existingSession.lastActive = new Date();
-            await this.sessionRepository.save(existingSession);
-
-            return {
-                sessionToken: existingSession.sessionToken,
-                fullName: existingSession.fullName,
+        if (session) {
+            session.sessionToken = sessionToken;
+            session.lastActive = new Date();
+        } else {
+            session = this.sessionRepository.create({
                 schoolId: school.id,
-                schoolName: school.name,
+                fullName: loginDto.fullName,
+                sessionToken,
                 isAdmin: false,
-            };
+            });
         }
-
-        // Создать новую сессию
-        const sessionToken = this.generateSessionToken();
-        const session = this.sessionRepository.create({
-            schoolId: school.id,
-            fullName: loginDto.fullName,
-            sessionToken,
-            isAdmin: false,
-        });
 
         await this.sessionRepository.save(session);
 
+        // ИСПРАВЛЕНИЕ: Получаем категории из профиля пользователя
+        const categories = await this.getUserCategories(school.id, loginDto.fullName);
+
         return {
-            sessionToken,
-            fullName: loginDto.fullName,
+            sessionId: session.id,
             schoolId: school.id,
             schoolName: school.name,
+            fullName: session.fullName,
             isAdmin: false,
+            sessionToken,
+            categories,
         };
     }
 
     /**
-     * Вход для администратора
+     * Вход администратора
      */
     async loginAdmin(adminLoginDto: AdminLoginDto) {
-        // Найти школу по паролю
+        // Находим школу по паролю
         const schools = await this.schoolRepository.find();
         let school: School | null = null;
 
         for (const s of schools) {
-            const isMatch = await bcrypt.compare(
-                adminLoginDto.schoolPassword,
-                s.passwordHash,
-            );
+            const isMatch = await bcrypt.compare(adminLoginDto.schoolPassword, s.passwordHash);
             if (isMatch) {
                 school = s;
                 break;
@@ -110,7 +130,7 @@ export class AuthService {
             throw new UnauthorizedException('Неверный пароль школы');
         }
 
-        // Найти админа
+        // Находим администратора
         const admin = await this.adminRepository.findOne({
             where: {
                 schoolId: school.id,
@@ -119,12 +139,10 @@ export class AuthService {
         });
 
         if (!admin) {
-            throw new UnauthorizedException(
-                'Администратор с таким ФИО не найден',
-            );
+            throw new UnauthorizedException('Администратор не найден');
         }
 
-        // Проверить пароль админа
+        // Проверяем пароль админа
         const isPasswordValid = await bcrypt.compare(
             adminLoginDto.adminPassword,
             admin.passwordHash,
@@ -134,73 +152,74 @@ export class AuthService {
             throw new UnauthorizedException('Неверный пароль администратора');
         }
 
-        // Проверить существующую сессию
-        const existingSession = await this.sessionRepository.findOne({
+        // Создаём или обновляем сессию
+        const sessionToken = uuidv4();
+
+        let session = await this.sessionRepository.findOne({
             where: {
                 schoolId: school.id,
-                fullName: admin.fullName,
+                fullName: adminLoginDto.fullName,
             },
         });
 
-        if (existingSession) {
-            existingSession.sessionToken = this.generateSessionToken();
-            existingSession.lastActive = new Date();
-            existingSession.isAdmin = true;
-            await this.sessionRepository.save(existingSession);
-
-            return {
-                sessionToken: existingSession.sessionToken,
-                fullName: existingSession.fullName,
+        if (session) {
+            session.sessionToken = sessionToken;
+            session.isAdmin = true;
+            session.lastActive = new Date();
+        } else {
+            session = this.sessionRepository.create({
                 schoolId: school.id,
-                schoolName: school.name,
+                fullName: adminLoginDto.fullName,
+                sessionToken,
                 isAdmin: true,
-            };
+            });
         }
-
-        // Создать новую сессию для админа
-        const sessionToken = this.generateSessionToken();
-        const session = this.sessionRepository.create({
-            schoolId: school.id,
-            fullName: admin.fullName,
-            sessionToken,
-            isAdmin: true,
-        });
 
         await this.sessionRepository.save(session);
 
+        // ИСПРАВЛЕНИЕ: Получаем категории из профиля пользователя
+        const categories = await this.getUserCategories(school.id, adminLoginDto.fullName);
+
         return {
-            sessionToken,
-            fullName: admin.fullName,
+            sessionId: session.id,
             schoolId: school.id,
             schoolName: school.name,
+            fullName: session.fullName,
             isAdmin: true,
+            sessionToken,
+            categories,
         };
     }
 
     /**
-     * Проверка валидности сессии
+     * Проверка сессии
      */
-    async validateSession(sessionToken: string) {
+    async checkSession(sessionToken: string) {
         const session = await this.sessionRepository.findOne({
             where: { sessionToken },
-            relations: ['school'],
         });
 
         if (!session) {
-            throw new UnauthorizedException('Сессия не найдена или истекла');
+            throw new UnauthorizedException('Сессия не найдена');
         }
 
-        // Обновить время последней активности
-        session.lastActive = new Date();
-        await this.sessionRepository.save(session);
+        const school = await this.schoolRepository.findOne({
+            where: { id: session.schoolId },
+        });
+
+        // ИСПРАВЛЕНИЕ: Получаем категории из профиля
+        const categories = await this.getUserCategories(session.schoolId, session.fullName);
 
         return {
-            sessionId: session.id,
-            fullName: session.fullName,
-            schoolId: session.schoolId,
-            schoolName: session.school.name,
-            isAdmin: session.isAdmin,
-            lastActive: session.lastActive,
+            user: {
+                sessionId: session.id,
+                schoolId: session.schoolId,
+                schoolName: school?.name,
+                fullName: session.fullName,
+                isAdmin: session.isAdmin,
+                sessionToken: session.sessionToken,
+                categories,
+            },
         };
     }
 
@@ -208,19 +227,43 @@ export class AuthService {
      * Выход из системы
      */
     async logout(sessionToken: string) {
-        const result = await this.sessionRepository.delete({ sessionToken });
+        const session = await this.sessionRepository.findOne({
+            where: { sessionToken },
+        });
 
-        if (result.affected === 0) {
-            throw new UnauthorizedException('Сессия не найдена');
+        if (session) {
+            await this.sessionRepository.remove(session);
         }
 
-        return { message: 'Выход выполнен успешно' };
+        return { message: 'Успешный выход' };
     }
 
     /**
-     * Генерация уникального токена сессии
+     * Валидация токена (для guards)
      */
-    private generateSessionToken(): string {
-        return crypto.randomBytes(32).toString('hex');
+    async validateToken(token: string): Promise<any> {
+        const session = await this.sessionRepository.findOne({
+            where: { sessionToken: token },
+        });
+
+        if (!session) {
+            return null;
+        }
+
+        // Обновляем lastActive
+        session.lastActive = new Date();
+        await this.sessionRepository.save(session);
+
+        // Получаем категории
+        const categories = await this.getUserCategories(session.schoolId, session.fullName);
+
+        return {
+            sessionId: session.id,
+            schoolId: session.schoolId,
+            fullName: session.fullName,
+            isAdmin: session.isAdmin,
+            sessionToken: session.sessionToken,
+            categories,
+        };
     }
 }
