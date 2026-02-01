@@ -119,70 +119,73 @@ const AppContent: React.FC = () => {
     return (
         <BrowserRouter>
             <Routes>
-                {/* НОВОЕ: Маршруты супер-админа (без обёртки CategoryCheckWrapper) */}
+                {/* Маршруты супер-админа (без обёртки CategoryCheckWrapper) */}
                 <Route path="/super-admin/login" element={<SuperAdminLoginPage />} />
                 <Route path="/super-admin/dashboard" element={<SuperAdminDashboard />} />
-                
-                {/* Основные маршруты с проверкой категорий */}
+
+                {/* Публичный роут логина */}
                 <Route
-                    path="/*"
+                    path="/login"
                     element={
-                        <CategoryCheckWrapper>
-                            <Routes>
-                                <Route
-                                    path="/login"
-                                    element={
-                                        <PublicRoute>
-                                            <LoginPage />
-                                        </PublicRoute>
-                                    }
-                                />
-                                <Route
-                                    path="/dashboard"
-                                    element={
-                                        <PrivateRoute>
-                                            <DashboardPage />
-                                        </PrivateRoute>
-                                    }
-                                />
-                                <Route
-                                    path="/events"
-                                    element={
-                                        <PrivateRoute>
-                                            <EventsPage />
-                                        </PrivateRoute>
-                                    }
-                                />
-                                <Route
-                                    path="/statistics"
-                                    element={
-                                        <PrivateRoute>
-                                            <StatisticsDashboard />
-                                        </PrivateRoute>
-                                    }
-                                />
-                                <Route
-                                    path="/admin/categories"
-                                    element={
-                                        <AdminRoute>
-                                            <CategoryManagement />
-                                        </AdminRoute>
-                                    }
-                                />
-                                <Route
-                                    path="/profile"
-                                    element={
-                                        <PrivateRoute>
-                                            <ProfilePage />
-                                        </PrivateRoute>
-                                    }
-                                />
-                                <Route path="/" element={<Navigate to="/dashboard" />} />
-                                <Route path="*" element={<Navigate to="/dashboard" />} />
-                            </Routes>
-                        </CategoryCheckWrapper>
+                        <PublicRoute>
+                            <LoginPage />
+                        </PublicRoute>
                     }
                 />
+
+                {/* Защищённые роуты с проверкой категорий */}
+                <Route
+                    path="/dashboard"
+                    element={
+                        <PrivateRoute>
+                            <CategoryCheckWrapper>
+                                <DashboardPage />
+                            </CategoryCheckWrapper>
+                        </PrivateRoute>
+                    }
+                />
+                <Route
+                    path="/events"
+                    element={
+                        <PrivateRoute>
+                            <CategoryCheckWrapper>
+                                <EventsPage />
+                            </CategoryCheckWrapper>
+                        </PrivateRoute>
+                    }
+                />
+                <Route
+                    path="/statistics"
+                    element={
+                        <PrivateRoute>
+                            <CategoryCheckWrapper>
+                                <StatisticsDashboard />
+                            </CategoryCheckWrapper>
+                        </PrivateRoute>
+                    }
+                />
+                <Route
+                    path="/admin/categories"
+                    element={
+                        <AdminRoute>
+                            <CategoryCheckWrapper>
+                                <CategoryManagement />
+                            </CategoryCheckWrapper>
+                        </AdminRoute>
+                    }
+                />
+                <Route
+                    path="/profile"
+                    element={
+                        <PrivateRoute>
+                            <CategoryCheckWrapper>
+                                <ProfilePage />
+                            </CategoryCheckWrapper>
+                        </PrivateRoute>
+                    }
+                />
+                <Route path="/" element={<Navigate to="/dashboard" />} />
+                <Route path="*" element={<Navigate to="/dashboard" />} />
             </Routes>
         </BrowserRouter>
     );

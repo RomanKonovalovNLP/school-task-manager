@@ -134,7 +134,7 @@ const LoginPage: React.FC = () => {
                 >
                     <Paper elevation={3} sx={{ p: 4, width: '100%' }}>
                         <Typography variant="h4" component="h1" gutterBottom align="center">
-                            Таск-менеджер для школ
+                            СкулТакт
                         </Typography>
 
                         <Tabs
@@ -230,13 +230,10 @@ const LoginPage: React.FC = () => {
 
                         <Box sx={{ mt: 3 }}>
                             <Typography variant="caption" color="text.secondary" align="center" display="block">
-                                Для тестирования:
                             </Typography>
                             <Typography variant="caption" color="text.secondary" align="center" display="block">
-                                Гость: Любое ФИО + пароль "school123"
                             </Typography>
                             <Typography variant="caption" color="text.secondary" align="center" display="block">
-                                Админ: "Иванов Иван Иванович" + "admin123" + "school123"
                             </Typography>
                         </Box>
                     </Paper>
