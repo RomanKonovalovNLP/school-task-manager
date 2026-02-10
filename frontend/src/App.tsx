@@ -13,9 +13,10 @@ import { restoreSession } from './store/slices/authSlice';
 import StatisticsDashboard from './components/statistics/StatisticsDashboard';
 import CategoryManagement from './components/admin/CategoryManagement';
 import RoleSelectionDialog from './components/auth/RoleSelectionDialog';
-// НОВОЕ: Страницы супер-админа
 import SuperAdminLoginPage from './pages/SuperAdminLoginPage';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
+import ScheduleDashboard from './pages/ScheduleDashboard';
+import ScheduleEditorPage from './pages/ScheduleEditorPage';
 
 const theme = createTheme({
     palette: {
