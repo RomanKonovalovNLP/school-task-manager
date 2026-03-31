@@ -28,7 +28,7 @@ export class SubstitutionsController {
 
     @Post()
     async create(@Body() dto: CreateSubstitutionDto, @Request() req) {
-        const createdBy = req.user.name || req.user.email || 'Admin';
+        const createdBy = req.user.fullName || 'Admin';
         return this.substitutionsService.create(dto, createdBy, req.user.schoolId);
     }
 

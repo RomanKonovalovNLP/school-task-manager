@@ -8,9 +8,10 @@ import { EventAssignee } from './entities/event-assignee.entity';
 import { EventAttachment } from './entities/event-attachment.entity';
 import { EventTask } from './entities/event-task.entity';
 import { EventTaskCompletion } from './entities/event-task-completion.entity';
+import { AgendaItem } from './entities/agenda-item.entity';
 import { UserProfile } from '../users/entities/user-profile.entity';
 import { AuthModule } from '../auth/auth.module';
-import { NotificationsModule } from '../notifications/notifications.module'; // ✅ НОВОЕ
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
     imports: [
@@ -20,6 +21,7 @@ import { NotificationsModule } from '../notifications/notifications.module'; // 
             EventAttachment,
             EventTask,
             EventTaskCompletion,
+            AgendaItem,
             UserProfile,
         ]),
         MulterModule.register({
@@ -28,7 +30,7 @@ import { NotificationsModule } from '../notifications/notifications.module'; // 
             },
         }),
         AuthModule,
-        NotificationsModule, // ✅ НОВОЕ: Добавляем для уведомлений о мероприятиях
+        NotificationsModule,
     ],
     controllers: [EventsController],
     providers: [EventsService],

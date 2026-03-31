@@ -1,5 +1,6 @@
-import { Controller, Post, Get, ForbiddenException } from '@nestjs/common';
+import { Controller, Post, Get, ForbiddenException, UseGuards } from '@nestjs/common';
 import { SchoolsService } from './schools.service';
+import { SchoolAuthGuard } from '../../common/guards/school-auth.guard';
 
 @Controller('schools')
 export class SchoolsController {
@@ -8,9 +9,10 @@ export class SchoolsController {
     /**
      * Создать тестовые данные
      * POST /schools/seed
-     * ИСПРАВЛЕНО: Добавлена проверка NODE_ENV - недоступно в production
+     * M12: Добавлен guard + проверка NODE_ENV
      */
     @Post('seed')
+    @UseGuards(SchoolAuthGuard)
     async seedData() {
         // Проверяем что мы не в production
         if (process.env.NODE_ENV === 'production') {

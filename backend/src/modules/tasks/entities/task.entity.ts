@@ -43,6 +43,14 @@ export class Task {
     @Column({ name: 'creator_id', nullable: true })
     creatorId: number;
 
+    // FIX #2: Личная задача — видна только создателю
+    @Column({ name: 'is_personal', type: 'boolean', default: false })
+    isPersonal: boolean;
+
+    // FIX #2: Видна только назначенным категориям + создателю + админам
+    @Column({ name: 'category_only', type: 'boolean', default: false })
+    categoryOnly: boolean;
+
     @OneToMany(() => TaskAssignee, (assignee) => assignee.task, {
         cascade: true,
         eager: true,

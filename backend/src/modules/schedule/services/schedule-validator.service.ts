@@ -189,10 +189,14 @@ export class ScheduleValidatorService {
 
     // Получить конфликты для урока
     async getConflictsForLesson(lessonId: number): Promise<ScheduleConflict[]> {
-        return this.conflictRepo.find({
-            where: { affectedLessons: lessonId as any },
-            order: { type: 'ASC', severity: 'DESC' },
-        });
+        // M5: affectedLessons — simple-array (хранится как строка через запятую).
+        // Нельзя искать через findOne с exact match. Используем LIKE.
+        return this.conflictRepo
+            .createQueryBuilder('conflict')
+            .where('conflict.affectedLessons LIKE :pattern', { pattern: `%${lessonId}%` })
+            .orderBy('conflict.type', 'ASC')
+            .addOrderBy('conflict.severity', 'DESC')
+            .getMany();
     }
 
     // Валидация всей версии расписания

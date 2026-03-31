@@ -136,9 +136,15 @@ const EventsPage: React.FC = () => {
         return dateA.getTime() - dateB.getTime();
     });
 
+    // F21: Для многодневных событий используем endDate (если есть) вместо eventDate
+    const getEventEndTime = (e: Event): Date => {
+        if (e.endDate) return new Date(e.endDate);
+        return new Date(e.startDate || e.eventDate);
+    };
+
     const now = new Date();
-    const upcomingEvents = sortedEvents.filter((e) => new Date(e.eventDate) >= now);
-    const pastEvents = sortedEvents.filter((e) => new Date(e.eventDate) < now);
+    const upcomingEvents = sortedEvents.filter((e) => getEventEndTime(e) >= now);
+    const pastEvents = sortedEvents.filter((e) => getEventEndTime(e) < now);
 
     if (loading) {
         return (

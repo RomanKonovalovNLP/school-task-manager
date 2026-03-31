@@ -19,9 +19,12 @@ async function bootstrap() {
   );
 
   // CORS для frontend
+  // FIX #1: exposedHeaders позволяет браузеру читать Content-Disposition
+  // Без этого заголовок недоступен фронтенду и имена файлов падают на fallback
   app.enableCors({
-    origin: 'http://localhost:3001', // URL вашего React приложения
+    origin: process.env.FRONTEND_URL || 'http://localhost:3001',
     credentials: true,
+    exposedHeaders: ['Content-Disposition'],
   });
 
   const port = process.env.PORT || 3000;

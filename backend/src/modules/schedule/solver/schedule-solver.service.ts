@@ -5,6 +5,7 @@ import { Workload, WorkloadWeekType } from '../entities/workload.entity';
 import { ScheduleLesson } from '../entities/schedule-lesson.entity';
 import { ScheduleConflict, ConflictType, ConflictCategory } from '../entities/schedule-conflict.entity';
 import { TeacherAvailability } from '../entities/teacher-availability.entity';
+import { ScheduleVersion } from '../entities/schedule-version.entity';
 import { SanpinRulesService } from './sanpin-rules.service';
 
 // Слот времени
@@ -64,6 +65,8 @@ export class ScheduleSolverService {
         private availabilityRepo: Repository<TeacherAvailability>,
         @InjectRepository(ScheduleConflict)
         private conflictRepo: Repository<ScheduleConflict>,
+        @InjectRepository(ScheduleVersion)
+        private versionRepo: Repository<ScheduleVersion>,
         private sanpinService: SanpinRulesService,
     ) {}
 
@@ -75,7 +78,13 @@ export class ScheduleSolverService {
         this.logger.log(`Starting schedule solver for version ${versionId}, mode: ${options.mode}`);
 
         try {
-            // 1. Загружаем данные
+            // 1. Загружаем версию и данные
+            const version = await this.versionRepo.findOne({ where: { id: versionId } });
+            const workingDays = version?.workingDays || 31; // 31 = Пн-Пт
+            const maxLessons = version?.maxLessonsPerDay || 7;
+
+            this.logger.log(`Version settings: workingDays=${workingDays}, maxLessons=${maxLessons}, institutionType=${(version as any)?.institutionType || 'school'}`);
+
             const workloads = await this.loadWorkloads(versionId);
             const existingLessons = await this.loadExistingLessons(versionId, options.respectLocked);
             const teacherAvailability = await this.loadTeacherAvailability(workloads);
@@ -105,8 +114,8 @@ export class ScheduleSolverService {
                 await this.clearUnlockedLessons(versionId);
             }
 
-            // 4. Генерируем слоты
-            const timeSlots = this.generateTimeSlots();
+            // 4. Генерируем слоты на основе настроек версии
+            const timeSlots = this.generateTimeSlots(workingDays, maxLessons);
 
             // 5. Запускаем жадный алгоритм с backtracking
             const result = await this.greedySchedule(
@@ -162,7 +171,9 @@ export class ScheduleSolverService {
         for (const lesson of existingLessons) {
             const key = this.getSlotKey(lesson.dayOfWeek, lesson.lessonNumber, lesson.weekType);
             occupiedSlots.set(`${key}-t${lesson.workload.teacherId}`, lesson);
-            occupiedSlots.set(`${key}-c${lesson.workload.classId}`, lesson);
+            // M7: Используем groupId в ключе класса для поддержки параллельных групп
+            const groupSuffix = lesson.workload.groupId ? `g${lesson.workload.groupId}` : 'g0';
+            occupiedSlots.set(`${key}-c${lesson.workload.classId}-${groupSuffix}`, lesson);
             if (lesson.roomId) {
                 occupiedSlots.set(`${key}-r${lesson.roomId}`, lesson);
             }
@@ -197,7 +208,9 @@ export class ScheduleSolverService {
                     // Обновляем занятые слоты
                     const key = this.getSlotKey(bestSlot.dayOfWeek, bestSlot.lessonNumber, bestSlot.weekType);
                     occupiedSlots.set(`${key}-t${workload.teacherId}`, lesson);
-                    occupiedSlots.set(`${key}-c${workload.classId}`, lesson);
+                    // M7: Группы
+                    const groupSuffix = workload.groupId ? `g${workload.groupId}` : 'g0';
+                    occupiedSlots.set(`${key}-c${workload.classId}-${groupSuffix}`, lesson);
                     if (lesson.roomId) {
                         occupiedSlots.set(`${key}-r${lesson.roomId}`, lesson);
                     }
@@ -282,9 +295,24 @@ export class ScheduleSolverService {
             return false;
         }
 
-        // Класс занят
-        if (occupiedSlots.has(`${key}-c${workload.classId}`)) {
-            return false;
+        // M7: Класс занят — но разные группы одного класса могут идти параллельно
+        if (workload.groupId) {
+            // Если урок для группы — конфликт только с тем же классом без группы
+            // или с той же группой
+            if (occupiedSlots.has(`${key}-c${workload.classId}-g0`)) {
+                return false; // Конфликт с уроком на весь класс
+            }
+            if (occupiedSlots.has(`${key}-c${workload.classId}-g${workload.groupId}`)) {
+                return false; // Конфликт с той же группой
+            }
+        } else {
+            // Если урок для всего класса — конфликт с любым уроком этого класса
+            // Проверяем все записи для этого класса в данном слоте
+            for (const [slotKey] of occupiedSlots) {
+                if (slotKey.startsWith(`${key}-c${workload.classId}`)) {
+                    return false;
+                }
+            }
         }
 
         // Кабинет занят (если указан)
@@ -376,8 +404,10 @@ export class ScheduleSolverService {
         occupiedSlots: Map<string, ScheduleLesson>,
     ): number {
         let count = 0;
+        // Улучшено: более точное сопоставление с разделителями
+        const classPattern = `-c${classId}-`;
         for (const [key] of occupiedSlots) {
-            if (key.includes(`-c${classId}`) && key.startsWith(`${dayOfWeek}-`)) {
+            if (key.includes(classPattern) && key.startsWith(`${dayOfWeek}-`)) {
                 count++;
             }
         }
@@ -444,10 +474,19 @@ export class ScheduleSolverService {
         return Math.max(0, workload.hoursPerWeek - placedCount);
     }
 
-    private generateTimeSlots(): TimeSlot[] {
+    /**
+     * Генерация временных слотов с учётом рабочих дней и макс. уроков/пар
+     * @param workingDays - битовая маска (1=Пн, 2=Вт, 4=Ср, 8=Чт, 16=Пт, 32=Сб, 64=Вс)
+     * @param maxLessons - максимальное количество уроков/пар в день
+     */
+    private generateTimeSlots(workingDays: number = 31, maxLessons: number = 7): TimeSlot[] {
         const slots: TimeSlot[] = [];
-        for (let day = 1; day <= 5; day++) {
-            for (let lesson = 1; lesson <= 7; lesson++) {
+        for (let day = 1; day <= 7; day++) {
+            // Проверяем бит для этого дня (Пн=бит 0, Вт=бит 1, ...)
+            const dayBit = 1 << (day - 1);
+            if (!(workingDays & dayBit)) continue;
+
+            for (let lesson = 1; lesson <= maxLessons; lesson++) {
                 slots.push({
                     dayOfWeek: day,
                     lessonNumber: lesson,
@@ -455,6 +494,7 @@ export class ScheduleSolverService {
                 });
             }
         }
+        this.logger.log(`Generated ${slots.length} time slots (days: ${workingDays}, max lessons: ${maxLessons})`);
         return slots;
     }
 
@@ -498,13 +538,40 @@ export class ScheduleSolverService {
         });
 
         // Проверяем конфликты
+        // M8: Включаем weekType в ключ, чтобы уроки чётной и нечётной недели
+        // не считались конфликтом
         const slotMap = new Map<string, ScheduleLesson[]>();
         for (const lesson of lessons) {
-            const key = `${lesson.dayOfWeek}-${lesson.lessonNumber}`;
+            const key = `${lesson.dayOfWeek}-${lesson.lessonNumber}-${lesson.weekType}`;
             if (!slotMap.has(key)) {
                 slotMap.set(key, []);
             }
             slotMap.get(key)!.push(lesson);
+        }
+
+        // Также проверяем конфликты между BOTH и odd/even
+        for (const lesson of lessons) {
+            if (lesson.weekType === WorkloadWeekType.BOTH) {
+                // Урок на обе недели конфликтует с уроками на чётную и нечётную
+                for (const wt of [WorkloadWeekType.ODD, WorkloadWeekType.EVEN]) {
+                    const crossKey = `${lesson.dayOfWeek}-${lesson.lessonNumber}-${wt}`;
+                    if (slotMap.has(crossKey)) {
+                        // Добавляем этот урок в кросс-слот для проверки конфликтов
+                        const existing = slotMap.get(crossKey)!;
+                        if (!existing.includes(lesson)) {
+                            existing.push(lesson);
+                        }
+                    }
+                }
+            } else {
+                const bothKey = `${lesson.dayOfWeek}-${lesson.lessonNumber}-${WorkloadWeekType.BOTH}`;
+                if (slotMap.has(bothKey)) {
+                    const existing = slotMap.get(bothKey)!;
+                    if (!existing.includes(lesson)) {
+                        existing.push(lesson);
+                    }
+                }
+            }
         }
 
         for (const [, slotLessons] of slotMap) {

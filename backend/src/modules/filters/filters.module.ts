@@ -6,6 +6,7 @@ import { FilterCategory } from './entities/filter-category.entity';
 import { UserCategory } from './entities/user-category.entity';
 import { UserProfile } from '../users/entities/user-profile.entity';
 import { UserSession } from '../auth/entities/user-session.entity';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { UserSession } from '../auth/entities/user-session.entity';
       UserProfile,
       UserSession,
     ]),
+    AuthModule, // D6: Явный импорт для SchoolAuthGuard
   ],
   controllers: [FiltersController],
   providers: [FiltersService],

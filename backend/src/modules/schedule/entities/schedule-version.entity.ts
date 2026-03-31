@@ -74,6 +74,9 @@ export class ScheduleVersion {
     @Column({ name: 'copied_from_id', type: 'int', nullable: true })
     copiedFromId: number;
 
+    @Column({ name: 'institution_type', type: 'varchar', length: 20, default: 'school' })
+    institutionType: string;
+
     @OneToMany(() => Workload, (workload) => workload.version)
     workloads: Workload[];
 

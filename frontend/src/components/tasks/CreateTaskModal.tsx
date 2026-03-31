@@ -15,6 +15,10 @@ import {
     OutlinedInput,
     SelectChangeEvent,
     CircularProgress,
+    FormControlLabel,
+    Checkbox,
+    Divider,
+    Typography,
 } from '@mui/material';
 import { useAppDispatch, useAppSelector } from '../../hooks/useRedux';
 import { addTask } from '../../store/slices/tasksSlice';
@@ -43,6 +47,10 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
+    // FIX #2: Личная задача и видимость по категориям
+    const [isPersonal, setIsPersonal] = useState(false);
+    const [categoryOnly, setCategoryOnly] = useState(false);
+
     const handleCategoryChange = (event: SelectChangeEvent<string[]>) => {
         const value = event.target.value;
         setSelectedCategories(typeof value === 'string' ? value.split(',') : value);
@@ -62,7 +70,8 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
             return;
         }
 
-        if (selectedCategories.length === 0) {
+        // Для неличных задач нужны категории
+        if (!isPersonal && selectedCategories.length === 0) {
             setError('Выберите хотя бы одну категорию');
             return;
         }
@@ -70,15 +79,16 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
         setLoading(true);
 
         try {
-            // ИСПРАВЛЕНИЕ: Если время не указано, ставим 00:00
             const time = deadlineTime || '00:00';
             const deadlineString = `${deadlineDate}T${time}`;
-            
+
             const taskData: CreateTaskDto = {
                 title: title.trim(),
                 description: description.trim(),
                 deadline: new Date(deadlineString).toISOString(),
-                assigneeCategories: selectedCategories,
+                assigneeCategories: isPersonal ? [] : selectedCategories,
+                isPersonal,
+                categoryOnly: isPersonal ? false : categoryOnly,
             };
 
             const newTask = await tasksService.create(taskData);
@@ -86,8 +96,9 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
             onSuccess();
             handleClose();
         } catch (err: any) {
+            const msg = err.response?.data?.message;
             setError(
-                err.response?.data?.message || 'Ошибка при создании задачи'
+                Array.isArray(msg) ? msg.join(', ') : msg || 'Ошибка при создании задачи'
             );
         } finally {
             setLoading(false);
@@ -100,6 +111,8 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
         setDeadlineDate('');
         setDeadlineTime('');
         setSelectedCategories([]);
+        setIsPersonal(false);
+        setCategoryOnly(false);
         setError('');
         onClose();
     };
@@ -137,7 +150,7 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                             fullWidth
                         />
 
-                        {/* ИСПРАВЛЕНИЕ: Разделенные поля для даты и времени */}
+                        {/* Разделенные поля для даты и времени */}
                         <Box sx={{ display: 'flex', gap: 2 }}>
                             <TextField
                                 label="Дата дедлайна"
@@ -146,12 +159,8 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                                 onChange={(e) => setDeadlineDate(e.target.value)}
                                 required
                                 fullWidth
-                                InputLabelProps={{
-                                    shrink: true,
-                                }}
-                                inputProps={{
-                                    min: today,
-                                }}
+                                InputLabelProps={{ shrink: true }}
+                                inputProps={{ min: today }}
                             />
                             <TextField
                                 label="Время (необязательно)"
@@ -159,35 +168,82 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                                 value={deadlineTime}
                                 onChange={(e) => setDeadlineTime(e.target.value)}
                                 fullWidth
-                                InputLabelProps={{
-                                    shrink: true,
-                                }}
+                                InputLabelProps={{ shrink: true }}
                                 helperText="По умолчанию 00:00"
                             />
                         </Box>
 
-                        <FormControl fullWidth required>
-                            <InputLabel>Для кого</InputLabel>
-                            <Select
-                                multiple
-                                value={selectedCategories}
-                                onChange={handleCategoryChange}
-                                input={<OutlinedInput label="Для кого" />}
-                                renderValue={(selected) => (
-                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                                        {selected.map((value) => (
-                                            <Chip key={value} label={value} size="small" />
+                        <Divider />
+
+                        {/* FIX #2: Личная задача */}
+                        <FormControlLabel
+                            control={
+                                <Checkbox
+                                    checked={isPersonal}
+                                    onChange={(e) => {
+                                        setIsPersonal(e.target.checked);
+                                        if (e.target.checked) {
+                                            setCategoryOnly(false);
+                                            setSelectedCategories([]);
+                                        }
+                                    }}
+                                />
+                            }
+                            label={
+                                <Box>
+                                    <Typography variant="body2">Личная задача</Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Видна только вам
+                                    </Typography>
+                                </Box>
+                            }
+                        />
+
+                        {/* Категории — скрыты для личных задач */}
+                        {!isPersonal && (
+                            <>
+                                <FormControl fullWidth required={!isPersonal}>
+                                    <InputLabel>Для кого</InputLabel>
+                                    <Select
+                                        multiple
+                                        value={selectedCategories}
+                                        onChange={handleCategoryChange}
+                                        input={<OutlinedInput label="Для кого" />}
+                                        renderValue={(selected) => (
+                                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                                {selected.map((value) => (
+                                                    <Chip key={value} label={value} size="small" />
+                                                ))}
+                                            </Box>
+                                        )}
+                                    >
+                                        {categories.map((cat) => (
+                                            <MenuItem key={cat.id} value={cat.categoryName}>
+                                                {cat.categoryName}
+                                            </MenuItem>
                                         ))}
-                                    </Box>
-                                )}
-                            >
-                                {categories.map((cat) => (
-                                    <MenuItem key={cat.id} value={cat.categoryName}>
-                                        {cat.categoryName}
-                                    </MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
+                                    </Select>
+                                </FormControl>
+
+                                {/* FIX #2: Видимость только для назначенных */}
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            checked={categoryOnly}
+                                            onChange={(e) => setCategoryOnly(e.target.checked)}
+                                        />
+                                    }
+                                    label={
+                                        <Box>
+                                            <Typography variant="body2">Только для выбранных категорий</Typography>
+                                            <Typography variant="caption" color="text.secondary">
+                                                Задачу увидят только назначенные, создатель и администраторы
+                                            </Typography>
+                                        </Box>
+                                    }
+                                />
+                            </>
+                        )}
                     </Box>
                 </DialogContent>
                 <DialogActions>

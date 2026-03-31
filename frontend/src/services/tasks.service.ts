@@ -27,11 +27,16 @@ export const tasksService = {
         category?: string;
         priority?: string;
         creatorName?: string;
+        showShared?: boolean;
+        showPersonal?: boolean;
     }): Promise<Task[]> {
         const params = new URLSearchParams();
         if (filters?.category) params.append('category', filters.category);
         if (filters?.priority) params.append('priority', filters.priority);
         if (filters?.creatorName) params.append('creatorName', filters.creatorName);
+        // FIX #2, #3: Фильтры по типу задач
+        if (filters?.showShared === false) params.append('showShared', 'false');
+        if (filters?.showPersonal === false) params.append('showPersonal', 'false');
 
         const response = await api.get<Task[]>(`/tasks?${params.toString()}`);
         return response.data;

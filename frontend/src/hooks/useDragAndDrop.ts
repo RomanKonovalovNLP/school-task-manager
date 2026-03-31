@@ -11,25 +11,31 @@ interface DragState {
     collidingTaskIds: number[];
 }
 
+const INITIAL_DRAG_STATE: DragState = {
+    isDragging: false,
+    taskId: null,
+    startPosition: { x: 0, y: 0 },
+    currentPosition: { x: 0, y: 0 },
+    offset: { x: 0, y: 0 },
+    collidingTaskIds: []
+};
+
 export const useDragAndDrop = (
     tasks: any[],
     taskDimensions: { width: number; height: number }
 ) => {
-    const [dragState, setDragState] = useState<DragState>({
-        isDragging: false,
-        taskId: null,
-        startPosition: { x: 0, y: 0 },
-        currentPosition: { x: 0, y: 0 },
-        offset: { x: 0, y: 0 },
-        collidingTaskIds: []
-    });
+    const [dragState, setDragState] = useState<DragState>({ ...INITIAL_DRAG_STATE });
+
+    // F20: Используем ref для доступа к актуальному dragState без пересоздания колбека
+    const dragStateRef = useRef<DragState>(dragState);
+    dragStateRef.current = dragState;
+
+    const tasksRef = useRef(tasks);
+    tasksRef.current = tasks;
 
     const { updateTaskPosition, createTaskGroup, addTaskToGroup } = useTaskPositions();
     const draggedTaskRef = useRef<HTMLDivElement | null>(null);
 
-    /**
-     * Начало перетаскивания
-     */
     const handleDragStart = useCallback((
         taskId: number,
         initialPosition: { x: number; y: number },
@@ -50,29 +56,26 @@ export const useDragAndDrop = (
         });
     }, []);
 
-    /**
-     * Процесс перетаскивания
-     */
+    // F20: handleDrag теперь читает из ref, не зависит от dragState в замыкании
     const handleDrag = useCallback((mousePosition: { x: number; y: number }) => {
-        if (!dragState.isDragging || !dragState.taskId) return;
+        const current = dragStateRef.current;
+        if (!current.isDragging || !current.taskId) return;
 
         const newPosition = {
-            x: mousePosition.x - dragState.offset.x,
-            y: mousePosition.y - dragState.offset.y
+            x: mousePosition.x - current.offset.x,
+            y: mousePosition.y - current.offset.y
         };
 
-        // Создаем прямоугольник для перетаскиваемой таски
         const draggedRect: TaskRect = {
-            taskId: dragState.taskId,
+            taskId: current.taskId,
             x: newPosition.x,
             y: newPosition.y,
             width: taskDimensions.width,
             height: taskDimensions.height
         };
 
-        // Создаем прямоугольники для остальных тасок
-        const otherTaskRects: TaskRect[] = tasks
-            .filter(task => task.id !== dragState.taskId)
+        const otherTaskRects: TaskRect[] = tasksRef.current
+            .filter(task => task.id !== current.taskId)
             .map(task => ({
                 taskId: task.id,
                 x: task.position?.x || 0,
@@ -81,7 +84,6 @@ export const useDragAndDrop = (
                 height: taskDimensions.height
             }));
 
-        // Проверяем коллизии
         const collisionResult = detectCollisions(draggedRect, otherTaskRects);
 
         setDragState(prev => ({
@@ -89,59 +91,34 @@ export const useDragAndDrop = (
             currentPosition: newPosition,
             collidingTaskIds: collisionResult.collidingTaskIds
         }));
-    }, [dragState, tasks, taskDimensions]);
+    }, [taskDimensions]); // F20: Теперь зависит только от taskDimensions
 
-    /**
-     * Завершение перетаскивания
-     */
     const handleDragEnd = useCallback(async () => {
-        if (!dragState.isDragging || !dragState.taskId) return;
+        const current = dragStateRef.current;
+        if (!current.isDragging || !current.taskId) return;
 
-        const taskId = dragState.taskId;
-        const finalPosition = dragState.currentPosition;
-        const collidingIds = dragState.collidingTaskIds;
+        const taskId = current.taskId;
+        const finalPosition = current.currentPosition;
+        const collidingIds = current.collidingTaskIds;
 
-        // Сбрасываем состояние
-        setDragState({
-            isDragging: false,
-            taskId: null,
-            startPosition: { x: 0, y: 0 },
-            currentPosition: { x: 0, y: 0 },
-            offset: { x: 0, y: 0 },
-            collidingTaskIds: []
-        });
+        setDragState({ ...INITIAL_DRAG_STATE });
 
         if (collidingIds.length > 0) {
-            // Есть коллизия - создаем или добавляем в группу
-            const draggedTask = tasks.find(t => t.id === taskId);
-            const targetTaskId = collidingIds[0]; // берем первую таску с коллизией
-            const targetTask = tasks.find(t => t.id === targetTaskId);
+            const targetTaskId = collidingIds[0];
+            const targetTask = tasksRef.current.find(t => t.id === targetTaskId);
 
             if (targetTask?.groupId) {
-                // Целевая таска уже в группе - добавляем к ней
                 await addTaskToGroup(targetTask.groupId, taskId);
             } else {
-                // Создаем новую группу
                 await createTaskGroup([targetTaskId, taskId], finalPosition);
             }
         } else {
-            // Нет коллизии - просто обновляем позицию
             await updateTaskPosition(taskId, finalPosition);
         }
-    }, [dragState, tasks, updateTaskPosition, createTaskGroup, addTaskToGroup]);
+    }, [updateTaskPosition, createTaskGroup, addTaskToGroup]);
 
-    /**
-     * Отмена перетаскивания (например, по Escape)
-     */
     const handleDragCancel = useCallback(() => {
-        setDragState({
-            isDragging: false,
-            taskId: null,
-            startPosition: { x: 0, y: 0 },
-            currentPosition: { x: 0, y: 0 },
-            offset: { x: 0, y: 0 },
-            collidingTaskIds: []
-        });
+        setDragState({ ...INITIAL_DRAG_STATE });
     }, []);
 
     return {

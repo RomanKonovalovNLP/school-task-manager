@@ -9,6 +9,7 @@ import {
     OneToMany,
 } from 'typeorm';
 import { Event } from './event.entity';
+import { AgendaItem } from './agenda-item.entity';
 import { EventTaskCompletion } from './event-task-completion.entity';
 
 @Entity('event_tasks')
@@ -22,6 +23,14 @@ export class EventTask {
     @ManyToOne(() => Event, (event) => event.tasks, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'event_id' })
     event: Event;
+
+    // FIX #5: Привязка к пункту расписания (null = задача самого мероприятия)
+    @Column({ name: 'agenda_item_id', nullable: true })
+    agendaItemId: number;
+
+    @ManyToOne(() => AgendaItem, (item) => item.tasks, { onDelete: 'CASCADE' })
+    @JoinColumn({ name: 'agenda_item_id' })
+    agendaItem: AgendaItem;
 
     @Column({ length: 255 })
     title: string;

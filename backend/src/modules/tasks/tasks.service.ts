@@ -64,30 +64,35 @@ export class TasksService {
             deadline: new Date(createTaskDto.deadline),
             creatorName: user.fullName,
             creatorId: user.sessionId,
+            isPersonal: createTaskDto.isPersonal || false,
+            categoryOnly: createTaskDto.categoryOnly || false,
         });
 
         const savedTask = await this.tasksRepo.save(task);
 
-        // Сохраняем assignees
-        const assignees = createTaskDto.assigneeCategories.map((category) =>
-            this.assigneesRepo.create({
-                taskId: savedTask.id,
-                assigneeCategory: category,
-            }),
-        );
-        await this.assigneesRepo.save(assignees);
+        // FIX #2: Для личных задач не создаём assignees и уведомления
+        if (!createTaskDto.isPersonal && createTaskDto.assigneeCategories.length > 0) {
+            // Сохраняем assignees
+            const assignees = createTaskDto.assigneeCategories.map((category) =>
+                this.assigneesRepo.create({
+                    taskId: savedTask.id,
+                    assigneeCategory: category,
+                }),
+            );
+            await this.assigneesRepo.save(assignees);
 
-        // Создаём уведомления
-        await this.notificationsService.createNotification(
-            user.schoolId,
-            createTaskDto.assigneeCategories,
-            savedTask.id,
-            NotificationType.NEW_TASK,
-            `Новая задача: ${savedTask.title}`,
-        );
+            // Создаём уведомления
+            await this.notificationsService.createNotification(
+                user.schoolId,
+                createTaskDto.assigneeCategories,
+                savedTask.id,
+                NotificationType.NEW_TASK,
+                `Новая задача: ${savedTask.title}`,
+            );
 
-        // Отправляем через WebSocket
-        this.notificationsGateway.broadcastTaskCreated(user.schoolId, savedTask);
+            // Отправляем через WebSocket
+            this.notificationsGateway.broadcastTaskCreated(user.schoolId, savedTask);
+        }
 
         return this.findOne(savedTask.id, user);
     }
@@ -120,8 +125,35 @@ export class TasksService {
 
         const tasks = await qb.getMany();
 
+        // FIX #2: Фильтрация по видимости
+        const showShared = filters.showShared !== 'false';
+        const showPersonal = filters.showPersonal !== 'false';
+        const userCategories = user.categories || [];
+
+        let filtered = tasks.filter((task) => {
+            // Личные задачи видны только создателю
+            if ((task as any).isPersonal) {
+                return (task as any).creatorId === user.sessionId;
+            }
+            // categoryOnly: видна только назначенным категориям + создателю + админам
+            if ((task as any).categoryOnly && !user.isAdmin && (task as any).creatorId !== user.sessionId) {
+                const taskCategories = task.assignees?.map(a => a.assigneeCategory) || [];
+                return taskCategories.some(c => userCategories.includes(c));
+            }
+            return true;
+        });
+
+        // FIX #3: Фильтры Общие/Личные
+        if (!showShared && !showPersonal) {
+            filtered = [];
+        } else if (!showShared) {
+            filtered = filtered.filter(t => (t as any).isPersonal);
+        } else if (!showPersonal) {
+            filtered = filtered.filter(t => !(t as any).isPersonal);
+        }
+
         // Вычисляем приоритет и добавляем дополнительные данные
-        return tasks.map((task) => this.enrichTask(task, user));
+        return filtered.map((task) => this.enrichTask(task, user));
     }
 
     /**
@@ -160,6 +192,8 @@ export class TasksService {
             title: updateTaskDto.title ?? task.title,
             description: updateTaskDto.description ?? task.description,
             deadline: updateTaskDto.deadline ? new Date(updateTaskDto.deadline) : task.deadline,
+            isPersonal: updateTaskDto.isPersonal ?? (task as any).isPersonal,
+            categoryOnly: updateTaskDto.categoryOnly ?? (task as any).categoryOnly,
         });
 
         await this.tasksRepo.save(task);
@@ -228,10 +262,13 @@ export class TasksService {
      * Удаление просроченных задач
      */
     async removeOverdue(user: any): Promise<{ message: string; count: number }> {
-        const overdueTasks = await this.tasksRepo.find({
-            where: { schoolId: user.schoolId, isOverdue: true },
-            relations: ['attachments'],
-        });
+        // M9: isOverdue никогда не обновляется в БД. Используем сравнение дат.
+        const overdueTasks = await this.tasksRepo
+            .createQueryBuilder('task')
+            .leftJoinAndSelect('task.attachments', 'attachments')
+            .where('task.schoolId = :schoolId', { schoolId: user.schoolId })
+            .andWhere('task.deadline < NOW()')
+            .getMany();
 
         // Удаляем вложения с диска
         for (const task of overdueTasks) {
@@ -531,6 +568,8 @@ export class TasksService {
             viewsCount: task.views?.length ?? 0,
             attachmentsCount: task.attachments?.length ?? 0,
             assigneeCategories,
+            isPersonal: (task as any).isPersonal || false,
+            categoryOnly: (task as any).categoryOnly || false,
         } as Task;
     }
 }

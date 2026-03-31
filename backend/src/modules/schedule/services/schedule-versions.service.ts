@@ -29,12 +29,23 @@ export class ScheduleVersionsService {
             order: { createdAt: 'DESC' },
         });
 
-        // Добавляем количество конфликтов
+        if (versions.length === 0) return versions;
+
+        // D3: Один запрос вместо N запросов для подсчёта конфликтов
+        const conflictCounts = await this.conflictRepo
+            .createQueryBuilder('conflict')
+            .select('conflict.versionId', 'versionId')
+            .addSelect('COUNT(*)', 'count')
+            .where('conflict.versionId IN (:...ids)', { ids: versions.map(v => v.id) })
+            .andWhere('conflict.type = :type', { type: ConflictType.HARD })
+            .andWhere('conflict.isResolved = false')
+            .groupBy('conflict.versionId')
+            .getRawMany();
+
+        const countMap = new Map(conflictCounts.map(c => [c.versionId, parseInt(c.count)]));
+
         for (const version of versions) {
-            const conflictsCount = await this.conflictRepo.count({
-                where: { versionId: version.id, type: ConflictType.HARD, isResolved: false },
-            });
-            (version as any).conflictsCount = conflictsCount;
+            (version as any).conflictsCount = countMap.get(version.id) || 0;
         }
 
         return versions;
@@ -98,8 +109,11 @@ export class ScheduleVersionsService {
 
         const savedVersion = await this.versionRepo.save(version);
 
-        // Создаём стандартное расписание звонков
-        await this.createDefaultBellSchedule(savedVersion.id);
+        // M6: Создаём расписание звонков только если НЕ копируем из существующей версии
+        // (copyFromVersion уже скопирует расписание звонков)
+        if (!dto.copyFromVersionId) {
+            await this.createDefaultBellSchedule(savedVersion.id);
+        }
 
         // Если копируем из существующей версии
         if (dto.copyFromVersionId) {

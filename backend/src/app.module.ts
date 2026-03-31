@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ScheduleModule as NestScheduleModule } from '@nestjs/schedule';
 import { getDatabaseConfig } from './config/database.config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -31,6 +32,9 @@ import { ScheduleModule } from './modules/schedule/schedule.module';
       inject: [ConfigService],
       useFactory: getDatabaseConfig,
     }),
+
+    // Cron-задачи (C6: @nestjs/schedule)
+    NestScheduleModule.forRoot(),
 
     // Модули приложения
     UsersModule,

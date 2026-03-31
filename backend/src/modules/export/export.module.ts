@@ -5,9 +5,14 @@ import { ExportController } from './export.controller';
 import { Task } from '../tasks/entities/task.entity';
 import { UserSession } from '../auth/entities/user-session.entity';
 import { StatisticsModule } from '../statistics/statistics.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-    imports: [TypeOrmModule.forFeature([Task, UserSession]), StatisticsModule],
+    imports: [
+        TypeOrmModule.forFeature([Task, UserSession]),
+        StatisticsModule,
+        AuthModule, // D6: Явный импорт для SchoolAuthGuard
+    ],
     controllers: [ExportController],
     providers: [ExportService],
     exports: [ExportService],

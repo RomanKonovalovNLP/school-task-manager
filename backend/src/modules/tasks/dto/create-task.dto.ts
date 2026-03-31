@@ -5,6 +5,8 @@ import {
     IsArray,
     ArrayMinSize,
     MaxLength,
+    IsBoolean,
+    IsOptional,
 } from 'class-validator';
 
 export class CreateTaskDto {
@@ -20,7 +22,16 @@ export class CreateTaskDto {
     deadline: string;
 
     @IsArray({ message: 'assigneeCategories должен быть массивом' })
-    @ArrayMinSize(1, { message: 'Необходимо выбрать хотя бы одну категорию' })
     @IsString({ each: true, message: 'Каждая категория должна быть строкой' })
     assigneeCategories: string[];
+
+    // FIX #2: Личная задача
+    @IsBoolean()
+    @IsOptional()
+    isPersonal?: boolean;
+
+    // FIX #2: Видна только назначенным категориям
+    @IsBoolean()
+    @IsOptional()
+    categoryOnly?: boolean;
 }

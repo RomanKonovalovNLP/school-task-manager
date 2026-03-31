@@ -40,16 +40,11 @@ export class ScheduleExportService {
         workbook.creator = 'SchoolTakt';
         workbook.created = new Date();
 
-        // Получаем данные
-        let lessons: ScheduleLesson[];
-
-        if (options.view === 'class') {
-            lessons = await this.versionsService.getScheduleByClass(versionId, 0) as ScheduleLesson[];
-        } else if (options.view === 'teacher') {
-            lessons = await this.versionsService.getScheduleByTeacher(versionId, 0) as ScheduleLesson[];
-        } else {
-            lessons = await this.versionsService.getScheduleByRoom(versionId, 0) as ScheduleLesson[];
-        }
+        // C7: Получаем все уроки версии напрямую, не через getScheduleByClass(0)
+        const lessons = await this.lessonRepo.find({
+            where: { versionId },
+            relations: ['workload', 'workload.schoolClass', 'workload.teacher', 'workload.subject', 'room'],
+        });
 
         // Группируем по сущности
         const groups = this.groupLessons(lessons, options.view);

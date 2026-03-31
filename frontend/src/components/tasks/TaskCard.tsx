@@ -38,7 +38,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
 }) => {
     const { user } = useAppSelector((state) => state.auth);
     const priorityColor = getPriorityColor(task.priority);
-    const canEdit = user?.isAdmin || task.creatorName === user?.fullName;
+    const canEdit = user?.isAdmin || task.creatorId === user?.id;
 
     return (
         <Card

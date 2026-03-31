@@ -15,8 +15,14 @@ export interface Task {
     assignees?: TaskAssignee[];
     assigneeCategories?: string[];
     views?: TaskView[];
+    attachments?: TaskAttachment[];  // НОВОЕ: Вложения для задач
     viewedByUser?: boolean;
     viewsCount?: number;
+    attachmentsCount?: number;  // НОВОЕ
+
+    // FIX #2: Личные задачи и видимость по категориям
+    isPersonal?: boolean;       // Личная задача (видна только создателю)
+    categoryOnly?: boolean;     // Видна только назначенным категориям + создателю + админам
 }
 
 export interface TaskView {
@@ -30,6 +36,18 @@ export interface TaskAssignee {
     id: number;
     taskId: number;
     assigneeCategory: string;
+}
+
+// НОВОЕ: Вложения для задач
+export interface TaskAttachment {
+    id: number;
+    taskId: number;
+    fileName: string;
+    originalName: string;
+    mimeType: string;
+    fileSize: number;
+    uploaderName: string;
+    uploadedAt: string;
 }
 
 export interface TaskPosition {
@@ -109,6 +127,8 @@ export interface CreateTaskDto {
     description?: string;
     deadline: string;
     assigneeCategories: string[];
+    isPersonal?: boolean;
+    categoryOnly?: boolean;     // FIX #2
 }
 
 export interface UpdateTaskDto {
@@ -116,4 +136,6 @@ export interface UpdateTaskDto {
     description?: string;
     deadline?: string;
     assigneeCategories?: string[];
+    isPersonal?: boolean;
+    categoryOnly?: boolean;     // FIX #2
 }

@@ -78,8 +78,11 @@ export class SuperAdminService implements OnModuleInit {
         const keyBuffer = Buffer.from(dto.setupKey);
         const expectedBuffer = Buffer.from(setupKey);
 
-        if (keyBuffer.length !== expectedBuffer.length ||
-            !crypto.timingSafeEqual(keyBuffer, expectedBuffer)) {
+        // C8: Проверяем длину ПЕРЕД вызовом timingSafeEqual (он бросает RangeError при разных длинах)
+        if (keyBuffer.length !== expectedBuffer.length) {
+            throw new UnauthorizedException('Неверный ключ установки');
+        }
+        if (!crypto.timingSafeEqual(keyBuffer, expectedBuffer)) {
             throw new UnauthorizedException('Неверный ключ установки');
         }
 

@@ -1,4 +1,5 @@
 import api from './api';
+import { extractFilenameFromHeaders, downloadBlob } from '../utils/downloadUtils';
 
 export interface EventAttachment {
     id: number;
@@ -27,20 +28,36 @@ export interface EventTask {
     updatedAt: string;
 }
 
+// FIX #5: Пункт расписания мероприятия (подмероприятие)
+export interface AgendaItem {
+    id: number;
+    eventId: number;
+    title: string;
+    description?: string;
+    startTime?: string; // HH:MM
+    endTime?: string;   // HH:MM
+    sortOrder: number;
+    responsibleNames?: string[];
+    attachments?: EventAttachment[];
+    tasks?: EventTask[];
+    createdAt: string;
+    updatedAt: string;
+}
+
 export interface Event {
     id: number;
     schoolId: number;
     title: string;
     description?: string;
-    
+
     // Дата/время начала и окончания
     startDate: string;
     endDate?: string | null;
     allDay: boolean;
-    
+
     // Для обратной совместимости
     eventDate: string;
-    
+
     creatorId: number;
     creatorName: string;
     createdAt: string;
@@ -48,6 +65,7 @@ export interface Event {
     assigneeCategories: string[];
     attachments?: EventAttachment[];
     tasks?: EventTask[];
+    agendaItems?: AgendaItem[];
     attachmentsCount?: number;
     tasksCount?: number;
     completedTasksCount?: number;
@@ -56,24 +74,24 @@ export interface Event {
 export interface CreateEventDto {
     title: string;
     description?: string;
-    
+
     // Даты начала и окончания
     startDate: string;
     endDate?: string;
     allDay?: boolean;
-    
+
     assigneeCategories: string[];
 }
 
 export interface UpdateEventDto {
     title?: string;
     description?: string;
-    
+
     // Даты
     startDate?: string;
     endDate?: string | null;
     allDay?: boolean;
-    
+
     assigneeCategories?: string[];
 }
 
@@ -81,6 +99,14 @@ export interface CreateEventTaskDto {
     title: string;
     description?: string;
     deadline?: string;
+}
+
+export interface CreateAgendaItemDto {
+    title: string;
+    description?: string;
+    startTime?: string;
+    endTime?: string;
+    responsibleNames?: string[];
 }
 
 export const eventsService = {
@@ -137,48 +163,19 @@ export const eventsService = {
 
     /**
      * Скачать вложение
-     * ИСПРАВЛЕНО: Правильное сохранение оригинального имени файла с поддержкой Unicode
+     * FIX #1: Используем общую утилиту downloadUtils для правильной кодировки Unicode
      */
     async downloadAttachment(eventId: number, attachmentId: number, originalName: string): Promise<void> {
         const response = await api.get(`/events/${eventId}/attachments/${attachmentId}/download`, {
             responseType: 'blob',
         });
-        
-        // Пытаемся получить имя файла из Content-Disposition header
-        const contentDisposition = response.headers['content-disposition'];
-        let fileName = originalName;
-        
-        if (contentDisposition) {
-            // Пробуем извлечь filename* (RFC 5987) - приоритетный для Unicode
-            const filenameStarMatch = contentDisposition.match(/filename\*=UTF-8''([^;\s]+)/i);
-            if (filenameStarMatch) {
-                try {
-                    fileName = decodeURIComponent(filenameStarMatch[1]);
-                } catch (e) {
-                    console.warn('Failed to decode filename*:', e);
-                }
-            } else {
-                // Пробуем извлечь обычный filename
-                const filenameMatch = contentDisposition.match(/filename="?([^";\n]+)"?/i);
-                if (filenameMatch) {
-                    try {
-                        fileName = decodeURIComponent(filenameMatch[1]);
-                    } catch (e) {
-                        // Если декодирование не удалось, используем как есть
-                        fileName = filenameMatch[1];
-                    }
-                }
-            }
-        }
-        
-        const url = window.URL.createObjectURL(new Blob([response.data]));
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', fileName);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.URL.revokeObjectURL(url);
+
+        const fileName = extractFilenameFromHeaders(
+            response.headers['content-disposition'],
+            originalName,
+        );
+
+        downloadBlob(response.data, fileName, response.headers['content-type']);
     },
 
     async deleteAttachment(eventId: number, attachmentId: number): Promise<void> {
@@ -207,6 +204,44 @@ export const eventsService = {
 
     async toggleTaskCompletion(eventId: number, taskId: number): Promise<{ completed: boolean }> {
         const response = await api.post<{ completed: boolean }>(`/events/${eventId}/tasks/${taskId}/toggle`);
+        return response.data;
+    },
+
+    // ==================== FIX #5: Расписание мероприятия (Agenda) ====================
+
+    async getAgendaItems(eventId: number): Promise<AgendaItem[]> {
+        const response = await api.get<AgendaItem[]>(`/events/${eventId}/agenda`);
+        return response.data;
+    },
+
+    async createAgendaItem(eventId: number, data: CreateAgendaItemDto): Promise<AgendaItem> {
+        const response = await api.post<AgendaItem>(`/events/${eventId}/agenda`, data);
+        return response.data;
+    },
+
+    async updateAgendaItem(eventId: number, itemId: number, data: Partial<CreateAgendaItemDto>): Promise<AgendaItem> {
+        const response = await api.put<AgendaItem>(`/events/${eventId}/agenda/${itemId}`, data);
+        return response.data;
+    },
+
+    async deleteAgendaItem(eventId: number, itemId: number): Promise<void> {
+        await api.delete(`/events/${eventId}/agenda/${itemId}`);
+    },
+
+    // Вложения и задачи пункта расписания
+    async uploadAgendaAttachment(eventId: number, itemId: number, file: File): Promise<EventAttachment> {
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await api.post<EventAttachment>(
+            `/events/${eventId}/agenda/${itemId}/attachments`,
+            formData,
+            { headers: { 'Content-Type': 'multipart/form-data' } }
+        );
+        return response.data;
+    },
+
+    async createAgendaTask(eventId: number, itemId: number, data: CreateEventTaskDto): Promise<EventTask> {
+        const response = await api.post<EventTask>(`/events/${eventId}/agenda/${itemId}/tasks`, data);
         return response.data;
     },
 };

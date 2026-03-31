@@ -60,4 +60,12 @@ export class ClassesController {
     ) {
         return this.classesService.addGroup(id, body.name, body.studentsCount, req.user.schoolId);
     }
+
+    @Delete('groups/:groupId')
+    @HttpCode(HttpStatus.NO_CONTENT)
+    async removeGroup(
+        @Param('groupId', ParseIntPipe) groupId: number,
+    ) {
+        await this.classesService.removeGroup(groupId);
+    }
 }

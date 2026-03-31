@@ -7,6 +7,7 @@ import {
     CreateDateColumn,
 } from 'typeorm';
 import { Event } from './event.entity';
+import { AgendaItem } from './agenda-item.entity';
 
 @Entity('event_attachments')
 export class EventAttachment {
@@ -19,6 +20,14 @@ export class EventAttachment {
     @ManyToOne(() => Event, (event) => event.attachments, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'event_id' })
     event: Event;
+
+    // FIX #5: Привязка к пункту расписания (null = вложение самого мероприятия)
+    @Column({ name: 'agenda_item_id', nullable: true })
+    agendaItemId: number;
+
+    @ManyToOne(() => AgendaItem, (item) => item.attachments, { onDelete: 'CASCADE' })
+    @JoinColumn({ name: 'agenda_item_id' })
+    agendaItem: AgendaItem;
 
     @Column({ name: 'file_name', length: 255 })
     fileName: string;

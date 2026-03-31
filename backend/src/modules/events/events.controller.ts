@@ -111,7 +111,6 @@ export class EventsController {
     /**
      * Загрузить вложение
      * POST /events/:id/attachments
-     * Ограничение: 10 MB
      */
     @Post(':id/attachments')
     @UseInterceptors(FileInterceptor('file'))
@@ -120,25 +119,20 @@ export class EventsController {
         @UploadedFile() file: any,
         @CurrentUser() user: any,
     ) {
-        // Проверка наличия файла
         if (!file) {
             throw new BadRequestException('Файл не был загружен');
         }
-
-        // Проверка размера файла
         if (file.size > MAX_FILE_SIZE) {
             throw new BadRequestException(
                 `Размер файла превышает максимально допустимый (10 MB). Размер вашего файла: ${(file.size / (1024 * 1024)).toFixed(2)} MB`
             );
         }
-
         return this.eventsService.uploadAttachment(id, file, user);
     }
 
     /**
      * Скачать вложение
      * GET /events/:id/attachments/:attachmentId/download
-     * ИСПРАВЛЕНО: Добавлена защита от path traversal + правильная кодировка Unicode
      */
     @Get(':id/attachments/:attachmentId/download')
     async downloadAttachment(
@@ -149,29 +143,22 @@ export class EventsController {
     ) {
         const attachment = await this.eventsService.downloadAttachment(id, attachmentId, user);
 
-        // ИСПРАВЛЕНО: Проверка path traversal - файл должен быть в разрешённой директории
         const resolvedPath = path.resolve(attachment.filePath);
         if (!resolvedPath.startsWith(UPLOADS_DIR)) {
             throw new BadRequestException('Недопустимый путь к файлу');
         }
-
         if (!fs.existsSync(resolvedPath)) {
             throw new BadRequestException('Файл не найден');
         }
 
         const file = fs.createReadStream(resolvedPath);
-
-        // ИСПРАВЛЕНО: Правильная кодировка Unicode имён файлов
         const originalName = attachment.originalName;
 
-        // RFC 5987 кодирование для поддержки unicode в Content-Disposition
         const encodedName = encodeURIComponent(originalName)
             .replace(/'/g, '%27')
             .replace(/\(/g, '%28')
             .replace(/\)/g, '%29')
             .replace(/\*/g, '%2A');
-
-        // Fallback имя для старых браузеров (только ASCII)
         const asciiName = originalName.replace(/[^\x20-\x7E]/g, '_');
 
         res.set({
@@ -198,10 +185,6 @@ export class EventsController {
 
     // ==================== ЗАДАЧИ МЕРОПРИЯТИЯ ====================
 
-    /**
-     * Создать задачу мероприятия
-     * POST /events/:id/tasks
-     */
     @Post(':id/tasks')
     createTask(
         @Param('id', ParseIntPipe) id: number,
@@ -211,19 +194,11 @@ export class EventsController {
         return this.eventsService.createTask(id, createTaskDto, user);
     }
 
-    /**
-     * Получить задачи мероприятия
-     * GET /events/:id/tasks
-     */
     @Get(':id/tasks')
     getTasks(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: any) {
         return this.eventsService.getTasks(id, user);
     }
 
-    /**
-     * Обновить задачу мероприятия
-     * PUT /events/:id/tasks/:taskId
-     */
     @Put(':id/tasks/:taskId')
     updateTask(
         @Param('id', ParseIntPipe) id: number,
@@ -234,10 +209,6 @@ export class EventsController {
         return this.eventsService.updateTask(id, taskId, updateTaskDto, user);
     }
 
-    /**
-     * Удалить задачу мероприятия
-     * DELETE /events/:id/tasks/:taskId
-     */
     @Delete(':id/tasks/:taskId')
     removeTask(
         @Param('id', ParseIntPipe) id: number,
@@ -247,10 +218,6 @@ export class EventsController {
         return this.eventsService.removeTask(id, taskId, user);
     }
 
-    /**
-     * Переключить выполнение задачи
-     * POST /events/:id/tasks/:taskId/toggle
-     */
     @Post(':id/tasks/:taskId/toggle')
     toggleTaskCompletion(
         @Param('id', ParseIntPipe) id: number,
@@ -258,5 +225,96 @@ export class EventsController {
         @CurrentUser() user: any,
     ) {
         return this.eventsService.toggleTaskCompletion(id, taskId, user);
+    }
+
+    // ==================== FIX #5: РАСПИСАНИЕ МЕРОПРИЯТИЯ (AGENDA) ====================
+
+    /**
+     * Получить пункты расписания мероприятия
+     * GET /events/:id/agenda
+     */
+    @Get(':id/agenda')
+    getAgendaItems(
+        @Param('id', ParseIntPipe) id: number,
+        @CurrentUser() user: any,
+    ) {
+        return this.eventsService.getAgendaItems(id, user);
+    }
+
+    /**
+     * Создать пункт расписания
+     * POST /events/:id/agenda
+     */
+    @Post(':id/agenda')
+    createAgendaItem(
+        @Param('id', ParseIntPipe) id: number,
+        @Body() body: { title: string; description?: string; startTime?: string; endTime?: string; responsibleNames?: string[] },
+        @CurrentUser() user: any,
+    ) {
+        return this.eventsService.createAgendaItem(id, body, user);
+    }
+
+    /**
+     * Обновить пункт расписания
+     * PUT /events/:id/agenda/:itemId
+     */
+    @Put(':id/agenda/:itemId')
+    updateAgendaItem(
+        @Param('id', ParseIntPipe) id: number,
+        @Param('itemId', ParseIntPipe) itemId: number,
+        @Body() body: Partial<{ title: string; description: string; startTime: string; endTime: string; responsibleNames: string[] }>,
+        @CurrentUser() user: any,
+    ) {
+        return this.eventsService.updateAgendaItem(id, itemId, body, user);
+    }
+
+    /**
+     * Удалить пункт расписания
+     * DELETE /events/:id/agenda/:itemId
+     */
+    @Delete(':id/agenda/:itemId')
+    deleteAgendaItem(
+        @Param('id', ParseIntPipe) id: number,
+        @Param('itemId', ParseIntPipe) itemId: number,
+        @CurrentUser() user: any,
+    ) {
+        return this.eventsService.deleteAgendaItem(id, itemId, user);
+    }
+
+    /**
+     * Загрузить вложение к пункту расписания
+     * POST /events/:id/agenda/:itemId/attachments
+     */
+    @Post(':id/agenda/:itemId/attachments')
+    @UseInterceptors(FileInterceptor('file'))
+    uploadAgendaAttachment(
+        @Param('id', ParseIntPipe) id: number,
+        @Param('itemId', ParseIntPipe) itemId: number,
+        @UploadedFile() file: any,
+        @CurrentUser() user: any,
+    ) {
+        if (!file) {
+            throw new BadRequestException('Файл не был загружен');
+        }
+        if (file.size > MAX_FILE_SIZE) {
+            throw new BadRequestException(
+                `Размер файла превышает 10 MB. Размер: ${(file.size / (1024 * 1024)).toFixed(2)} MB`
+            );
+        }
+        return this.eventsService.uploadAgendaAttachment(id, itemId, file, user);
+    }
+
+    /**
+     * Создать задачу пункта расписания
+     * POST /events/:id/agenda/:itemId/tasks
+     */
+    @Post(':id/agenda/:itemId/tasks')
+    createAgendaTask(
+        @Param('id', ParseIntPipe) id: number,
+        @Param('itemId', ParseIntPipe) itemId: number,
+        @Body() body: CreateEventTaskDto,
+        @CurrentUser() user: any,
+    ) {
+        return this.eventsService.createAgendaTask(id, itemId, body, user);
     }
 }

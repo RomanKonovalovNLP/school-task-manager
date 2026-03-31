@@ -31,6 +31,11 @@ export const useNotifications = () => {
         const newSocket = io(`${process.env.REACT_APP_WS_URL || 'http://localhost:3000'}/notifications`, {
             auth: { token: sessionToken },
             transports: ['websocket'],
+            // F19: Явная настройка переподключения
+            reconnection: true,
+            reconnectionAttempts: 10,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 30000,
         });
 
         newSocket.on('connect', () => {

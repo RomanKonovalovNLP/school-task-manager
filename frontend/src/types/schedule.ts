@@ -75,6 +75,26 @@ export enum SanpinCategory {
     OTHER = 'другое',
 }
 
+// ==================== Working Days Helpers ====================
+
+/** Битовая маска дней недели: 1=Пн, 2=Вт, 4=Ср, 8=Чт, 16=Пт, 32=Сб */
+export const WORKING_DAYS_5 = 31;  // Пн-Пт (1+2+4+8+16)
+export const WORKING_DAYS_6 = 63;  // Пн-Сб (1+2+4+8+16+32)
+
+/** Проверить, является ли день рабочим по битовой маске */
+export function isDayWorking(workingDays: number, dayOfWeek: number): boolean {
+    return (workingDays & (1 << (dayOfWeek - 1))) !== 0;
+}
+
+/** Получить список рабочих дней из битовой маски */
+export function getWorkingDaysList(workingDays: number): number[] {
+    const days: number[] = [];
+    for (let d = 1; d <= 7; d++) {
+        if (isDayWorking(workingDays, d)) days.push(d);
+    }
+    return days;
+}
+
 // ==================== Interfaces ====================
 
 export interface SchoolClass {
@@ -87,6 +107,7 @@ export interface SchoolClass {
     classroomId?: number;
     color: string;
     isActive: boolean;
+    shift?: number; // 1 = первая смена, 2 = вторая смена (null = единое время)
     groups?: ClassGroup[];
     createdAt: string;
     updatedAt: string;
@@ -190,6 +211,7 @@ export interface BellSchedule {
     startTime: string;
     endTime: string;
     breakAfter: number;
+    shift?: number; // 1 = первая смена, 2 = вторая смена (null = единое)
     name?: string;
 }
 

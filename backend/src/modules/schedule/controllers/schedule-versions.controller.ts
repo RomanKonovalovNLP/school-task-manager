@@ -9,10 +9,12 @@ import {
     Query,
     UseGuards,
     Request,
+    Res,
     ParseIntPipe,
     HttpStatus,
     HttpCode,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { SchoolAuthGuard } from '../../../common/guards/school-auth.guard';
 import { ScheduleVersionsService } from '../services/schedule-versions.service';
 import { ScheduleSolverService } from '../solver/schedule-solver.service';
@@ -170,15 +172,32 @@ export class ScheduleVersionsController {
         @Query('ids') ids: string,
         @Query('weekType') weekType: 'odd' | 'even',
         @Request() req,
+        @Res() res: Response,
     ) {
         const parsedIds = ids ? ids.split(',').map(Number) : undefined;
+        const fmt = format || 'xlsx';
 
-        return this.exportService.export(id, req.user.schoolId, {
-            format: format || 'xlsx',
+        const buffer = await this.exportService.export(id, req.user.schoolId, {
+            format: fmt,
             view: view || 'class',
             ids: parsedIds,
             weekType,
         });
+
+        const date = new Date().toISOString().split('T')[0];
+
+        if (fmt === 'xlsx') {
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            res.setHeader('Content-Disposition', `attachment; filename="schedule_${date}.xlsx"`);
+        } else if (fmt === 'html') {
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="schedule_${date}.html"`);
+        } else {
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `attachment; filename="schedule_${date}.pdf"`);
+        }
+
+        res.send(buffer);
     }
 
     /**

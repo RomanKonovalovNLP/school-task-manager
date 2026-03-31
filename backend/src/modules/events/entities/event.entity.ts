@@ -12,6 +12,7 @@ import { School } from '../../schools/entities/school.entity';
 import { EventAssignee } from './event-assignee.entity';
 import { EventAttachment } from './event-attachment.entity';
 import { EventTask } from './event-task.entity';
+import { AgendaItem } from './agenda-item.entity';
 
 @Entity('events')
 export class Event {
@@ -31,22 +32,17 @@ export class Event {
     @Column({ type: 'text', nullable: true })
     description: string;
 
-    // ✅ НОВОЕ: Дата и время начала мероприятия
     @Column({ name: 'start_date', type: 'timestamptz' })
     startDate: Date;
 
-    // ✅ НОВОЕ: Дата и время окончания мероприятия (nullable - может быть не указана)
     @Column({ name: 'end_date', type: 'timestamptz', nullable: true })
     endDate: Date | null;
 
-    // ✅ НОВОЕ: Флаг "весь день" (если true - время не учитывается)
     @Column({ name: 'all_day', default: false })
     allDay: boolean;
 
-    // Оставляем для обратной совместимости, но помечаем deprecated
-    // В новых версиях использовать startDate
     @Column({ name: 'event_date', type: 'timestamptz', nullable: true })
-    eventDate: Date;
+    eventDate: Date | null;
 
     @Column({ name: 'creator_id' })
     creatorId: number;
@@ -68,4 +64,8 @@ export class Event {
 
     @OneToMany(() => EventTask, (task) => task.event, { cascade: true })
     tasks: EventTask[];
+
+    // FIX #5: Расписание мероприятия
+    @OneToMany(() => AgendaItem, (item) => item.event, { cascade: true })
+    agendaItems: AgendaItem[];
 }

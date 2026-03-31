@@ -11,7 +11,7 @@ export const getDatabaseConfig = (
     password: configService.get('DATABASE_PASSWORD'),
     database: configService.get('DATABASE_NAME'),
     entities: [__dirname + '/../**/*.entity{.ts,.js}'],
-    synchronize: true, // ВАЖНО: в продакшене поставить false
+    synchronize: configService.get('NODE_ENV') !== 'production', // В продакшене используйте миграции
     logging: true,
     autoLoadEntities: true,
 });

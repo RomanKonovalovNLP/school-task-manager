@@ -141,6 +141,19 @@ const LessonCard: React.FC<LessonCardProps> = ({
                             >
                                 {teacher?.shortName || teacher?.fullName}
                             </Typography>
+                            <Typography
+                                variant="caption"
+                                sx={{
+                                    opacity: 0.7,
+                                    fontSize: '0.6rem',
+                                    display: 'block',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                }}
+                            >
+                                {schoolClass?.name || ''}{group ? ` (${group.name})` : ''}{room ? ` • каб. ${room.name}` : ''}
+                            </Typography>
                         </Box>
 
                         {lesson.isLocked && (
@@ -161,20 +174,6 @@ const LessonCard: React.FC<LessonCardProps> = ({
                             <MoreVert fontSize="small" />
                         </IconButton>
                     </Box>
-
-                    {room && (
-                        <Typography
-                            variant="caption"
-                            sx={{
-                                opacity: 0.7,
-                                fontSize: '0.6rem',
-                                display: 'block',
-                                textAlign: 'right',
-                            }}
-                        >
-                            каб. {room.name}
-                        </Typography>
-                    )}
 
                     {/* Контекстное меню */}
                     <Menu

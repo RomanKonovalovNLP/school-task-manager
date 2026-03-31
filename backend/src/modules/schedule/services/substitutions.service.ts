@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
+import { Repository, Between, In } from 'typeorm';
 import { Substitution } from '../entities/substitution.entity';
 import { ScheduleLesson } from '../entities/schedule-lesson.entity';
 import { Teacher } from '../entities/teacher.entity';
@@ -45,7 +45,7 @@ export class SubstitutionsService {
         const substitutions = lessonIds.length > 0
             ? await this.substitutionRepo.find({
                 where: {
-                    lessonId: lessonIds as any, // TypeORM In operator
+                    lessonId: In(lessonIds),
                     date: dateObj,
                 },
                 relations: ['newTeacher', 'newRoom', 'newSubject'],

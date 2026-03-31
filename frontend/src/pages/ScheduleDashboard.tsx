@@ -37,7 +37,8 @@ import {
     Publish,
     CheckCircle,
     Schedule,
-    Archive,
+    Settings,
+    Home,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { scheduleService } from '../services/schedule.service';
@@ -46,13 +47,24 @@ import {
     ScheduleVersionType,
     WeekType,
     ScheduleStatus,
+    WORKING_DAYS_5,
+    WORKING_DAYS_6,
 } from '../types/schedule';
+import { INSTITUTION_TYPES, InstitutionType, getTerms } from '../utils/institutionTypes';
 
 const ScheduleDashboard: React.FC = () => {
     const navigate = useNavigate();
     const [versions, setVersions] = useState<ScheduleVersion[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    const getErrorMessage = (err: any, fallback: string): string => {
+        const msg = err?.response?.data?.message ?? err?.message;
+        if (Array.isArray(msg)) return msg.join(', ');
+        if (typeof msg === 'string') return msg;
+        if (typeof msg === 'object' && msg !== null) return JSON.stringify(msg);
+        return fallback;
+    };
     
     // Меню действий
     const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
@@ -64,6 +76,9 @@ const ScheduleDashboard: React.FC = () => {
         name: '',
         type: ScheduleVersionType.TEMPLATE,
         weekType: WeekType.SINGLE,
+        workingDays: WORKING_DAYS_5 as number,
+        institutionType: 'school' as InstitutionType,
+        maxLessonsPerDay: 7,
     });
 
     // Загрузка данных
@@ -76,9 +91,9 @@ const ScheduleDashboard: React.FC = () => {
             setLoading(true);
             setError(null);
             const data = await scheduleService.getVersions();
-            setVersions(data.versions);
+            setVersions(Array.isArray(data) ? data : data.versions || []);
         } catch (err: any) {
-            setError(err.response?.data?.message || 'Ошибка загрузки расписаний');
+            setError(getErrorMessage(err, 'Ошибка загрузки расписаний'));
         } finally {
             setLoading(false);
         }
@@ -99,18 +114,21 @@ const ScheduleDashboard: React.FC = () => {
     // Создание версии
     const handleCreate = async () => {
         try {
-            const created = await scheduleService.createVersion(newVersion);
+            const response = await scheduleService.createVersion(newVersion);
+            const created = (response as any).version || response;
             setVersions((prev) => [...prev, created]);
             setCreateDialogOpen(false);
             setNewVersion({
                 name: '',
                 type: ScheduleVersionType.TEMPLATE,
                 weekType: WeekType.SINGLE,
+                workingDays: WORKING_DAYS_5,
+                institutionType: 'school',
+                maxLessonsPerDay: 7,
             });
-            // Переходим к редактированию
             navigate(`/schedule/editor/${created.id}`);
         } catch (err: any) {
-            setError(err.response?.data?.message || 'Ошибка создания расписания');
+            setError(getErrorMessage(err, 'Ошибка создания расписания'));
         }
     };
 
@@ -118,14 +136,15 @@ const ScheduleDashboard: React.FC = () => {
     const handleCopy = async () => {
         if (!selectedVersion) return;
         try {
-            const copied = await scheduleService.copyVersion(
+            const response = await scheduleService.copyVersion(
                 selectedVersion.id,
                 `${selectedVersion.name} (копия)`
             );
+            const copied = (response as any).version || response;
             setVersions((prev) => [...prev, copied]);
             handleMenuClose();
         } catch (err: any) {
-            setError(err.response?.data?.message || 'Ошибка копирования');
+            setError(getErrorMessage(err, 'Ошибка копирования'));
         }
     };
 
@@ -139,7 +158,7 @@ const ScheduleDashboard: React.FC = () => {
             setVersions((prev) => prev.filter((v) => v.id !== selectedVersion.id));
             handleMenuClose();
         } catch (err: any) {
-            setError(err.response?.data?.message || 'Ошибка удаления');
+            setError(getErrorMessage(err, 'Ошибка удаления'));
         }
     };
 
@@ -156,7 +175,7 @@ const ScheduleDashboard: React.FC = () => {
             );
             handleMenuClose();
         } catch (err: any) {
-            setError(err.response?.data?.message || 'Ошибка активации');
+            setError(getErrorMessage(err, 'Ошибка активации'));
         }
     };
 
@@ -170,7 +189,7 @@ const ScheduleDashboard: React.FC = () => {
             );
             handleMenuClose();
         } catch (err: any) {
-            setError(err.response?.data?.message || 'Ошибка публикации');
+            setError(getErrorMessage(err, 'Ошибка публикации'));
         }
     };
 
@@ -224,16 +243,30 @@ const ScheduleDashboard: React.FC = () => {
             {/* Заголовок */}
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Tooltip title="Вернуться в основное приложение">
+                        <IconButton onClick={() => navigate('/dashboard')} sx={{ mr: -1 }}>
+                            <Home />
+                        </IconButton>
+                    </Tooltip>
                     <Schedule color="primary" sx={{ fontSize: 32 }} />
                     <Typography variant="h4">Расписание</Typography>
                 </Box>
-                <Button
-                    variant="contained"
-                    startIcon={<Add />}
-                    onClick={() => setCreateDialogOpen(true)}
-                >
-                    Создать расписание
-                </Button>
+                <Box sx={{ display: 'flex', gap: 2 }}>
+                    <Button
+                        variant="outlined"
+                        startIcon={<Settings />}
+                        onClick={() => navigate('/schedule/manage')}
+                    >
+                        Настройки
+                    </Button>
+                    <Button
+                        variant="contained"
+                        startIcon={<Add />}
+                        onClick={() => setCreateDialogOpen(true)}
+                    >
+                        Создать расписание
+                    </Button>
+                </Box>
             </Box>
 
             {/* Ошибка */}
@@ -290,6 +323,8 @@ const ScheduleDashboard: React.FC = () => {
                                     <TableCell>{getTypeLabel(version.type)}</TableCell>
                                     <TableCell>
                                         {version.weekType === WeekType.SINGLE ? 'Одна' : 'Чёт/Нечёт'}
+                                        {' · '}
+                                        {(version as any).workingDays === WORKING_DAYS_6 ? '6 дн' : '5 дн'}
                                     </TableCell>
                                     <TableCell>
                                         {version.startDate || version.endDate ? (
@@ -394,7 +429,7 @@ const ScheduleDashboard: React.FC = () => {
                         </Select>
                     </FormControl>
 
-                    <FormControl fullWidth>
+                    <FormControl fullWidth sx={{ mb: 2 }}>
                         <InputLabel>Тип недели</InputLabel>
                         <Select
                             value={newVersion.weekType}
@@ -410,6 +445,57 @@ const ScheduleDashboard: React.FC = () => {
                             <MenuItem value={WeekType.ODD_EVEN}>Двухнедельное (чёт/нечёт)</MenuItem>
                         </Select>
                     </FormControl>
+
+                    {/* FIX #1: Выбор 5 или 6 рабочих дней */}
+                    <FormControl fullWidth sx={{ mb: 2 }}>
+                        <InputLabel>Рабочих дней</InputLabel>
+                        <Select
+                            value={newVersion.workingDays}
+                            label="Рабочих дней"
+                            onChange={(e) =>
+                                setNewVersion((prev) => ({
+                                    ...prev,
+                                    workingDays: Number(e.target.value),
+                                }))
+                            }
+                        >
+                            <MenuItem value={WORKING_DAYS_5}>5 дней (Пн—Пт)</MenuItem>
+                            <MenuItem value={WORKING_DAYS_6}>6 дней (Пн—Сб)</MenuItem>
+                        </Select>
+                    </FormControl>
+
+                    {/* FIX #5: Тип образовательного учреждения */}
+                    <FormControl fullWidth>
+                        <InputLabel>Тип учреждения</InputLabel>
+                        <Select
+                            value={newVersion.institutionType}
+                            label="Тип учреждения"
+                            onChange={(e) => {
+                                const type = e.target.value as InstitutionType;
+                                const t = getTerms(type);
+                                setNewVersion((prev) => ({
+                                    ...prev,
+                                    institutionType: type,
+                                    maxLessonsPerDay: t.defaultMaxLessons,
+                                }));
+                            }}
+                        >
+                            {INSTITUTION_TYPES.map((t) => (
+                                <MenuItem key={t.value} value={t.value}>{t.label}</MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+
+                    {newVersion.institutionType !== 'school' && (() => {
+                        const t = getTerms(newVersion.institutionType);
+                        return (
+                            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                {t.lessonLabel} = {t.defaultLessonDuration} мин ({t.academicHoursPerLesson} акад. ч.) ·{' '}
+                                Макс {t.defaultMaxLessons} {t.lessonLabelPlural.toLowerCase()} в день ·{' '}
+                                {t.classLabelPlural}, {t.teacherLabelPlural.toLowerCase()}, {t.roomLabelPlural.toLowerCase()}
+                            </Typography>
+                        );
+                    })()}
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setCreateDialogOpen(false)}>Отмена</Button>

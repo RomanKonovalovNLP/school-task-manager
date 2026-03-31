@@ -105,7 +105,9 @@ export function findBestCollisionTarget(
     let maxOverlap = 0;
     let bestTargetId: number | null = null;
 
-    collisionResult.overlapPercentages.forEach((overlap, taskId) => {
+    // F33: Итерируем только по задачам, прошедшим порог коллизии
+    collisionResult.collidingTaskIds.forEach((taskId) => {
+        const overlap = collisionResult.overlapPercentages.get(taskId) || 0;
         if (overlap > maxOverlap) {
             maxOverlap = overlap;
             bestTargetId = taskId;

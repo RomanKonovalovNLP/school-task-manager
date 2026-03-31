@@ -6,11 +6,12 @@ import { TaskStatistic } from './entities/task-statistic.entity';
 import { Task } from '../tasks/entities/task.entity';
 import { TaskCompletion } from '../tasks/entities/task-completion.entity';
 import { TaskAssignee } from '../tasks/entities/task-assignee.entity';
+import { UserProfile } from '../users/entities/user-profile.entity';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([TaskStatistic, Task, TaskCompletion, TaskAssignee]),
+        TypeOrmModule.forFeature([TaskStatistic, Task, TaskCompletion, TaskAssignee, UserProfile]),
         AuthModule,
     ],
     controllers: [StatisticsController],

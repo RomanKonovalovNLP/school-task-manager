@@ -28,10 +28,10 @@ api.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response?.status === 401) {
-            // Токен истек или недействителен
+            // F15: Используем CustomEvent вместо window.location.href для React Router
             localStorage.removeItem('sessionToken');
             localStorage.removeItem('user');
-            window.location.href = '/login';
+            window.dispatchEvent(new CustomEvent('auth:logout'));
         }
         return Promise.reject(error);
     }

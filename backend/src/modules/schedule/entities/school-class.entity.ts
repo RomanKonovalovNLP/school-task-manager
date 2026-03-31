@@ -45,6 +45,10 @@ export class SchoolClass {
     @Column({ name: 'is_active', type: 'boolean', default: true })
     isActive: boolean;
 
+    // FIX #7: Смена класса (1 = первая, 2 = вторая; null = единое время)
+    @Column({ type: 'int', nullable: true })
+    shift: number;
+
     @OneToMany(() => ClassGroup, (group) => group.schoolClass)
     groups: ClassGroup[];
 

@@ -21,8 +21,9 @@ superAdminApi.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response?.status === 401) {
+            // F27: Используем CustomEvent вместо window.location.href
             localStorage.removeItem('superAdminToken');
-            window.location.href = '/super-admin/login';
+            window.dispatchEvent(new CustomEvent('superadmin:logout'));
         }
         return Promise.reject(error);
     }

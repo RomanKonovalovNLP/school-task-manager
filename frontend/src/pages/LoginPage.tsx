@@ -133,9 +133,13 @@ const LoginPage: React.FC = () => {
                     }}
                 >
                     <Paper elevation={3} sx={{ p: 4, width: '100%' }}>
-                        <Typography variant="h4" component="h1" gutterBottom align="center">
-                            СкулТакт
-                        </Typography>
+                        <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+                            <img
+                                src="/plantakt-logo.png"
+                                alt="ПланТакт"
+                                style={{ height: 56, objectFit: 'contain' }}
+                            />
+                        </Box>
 
                         <Tabs
                             value={tabValue}

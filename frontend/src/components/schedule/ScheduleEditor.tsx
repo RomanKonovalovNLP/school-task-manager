@@ -1,26 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-    Box,
-    Paper,
-    Typography,
-    Button,
-    IconButton,
-    Tabs,
-    Tab,
-    Chip,
-    Alert,
-    CircularProgress,
-    Drawer,
+    Box, Paper, Typography, Button, IconButton, Tabs, Tab, Chip,
+    Alert, CircularProgress, Drawer, TextField, InputAdornment,
 } from '@mui/material';
 import {
-    Undo,
-    Redo,
-    PlayArrow,
-    Warning,
-    Error as ErrorIcon,
-    CheckCircle,
-    Download,
-    Refresh,
+    Undo, Redo, PlayArrow, Warning, Error as ErrorIcon,
+    CheckCircle, Download, Refresh, ArrowBack, Search, Close,
 } from '@mui/icons-material';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -31,26 +16,26 @@ import AutoGenerateModal from './AutoGenerateModal';
 import ExportModal from './ExportModal';
 import { scheduleService } from '../../services/schedule.service';
 import {
-    ScheduleVersion,
-    ScheduleLesson,
-    Workload,
-    ScheduleConflict,
+    ScheduleVersion, ScheduleLesson, Workload, ScheduleConflict,
+    SchoolClass, Teacher, Subject, Room, WorkloadWeekType,
 } from '../../types/schedule';
+import { getTerms } from '../../utils/institutionTypes';
 
-interface ScheduleEditorProps {
-    versionId: number;
-}
-
+interface ScheduleEditorProps { versionId: number; onBack?: () => void; }
 type ViewMode = 'class' | 'teacher' | 'room';
 
-const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ versionId }) => {
-    // Состояния данных
+const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ versionId, onBack }) => {
+    const getErr = (e: any, fb: string) => { const m = e.response?.data?.message; return Array.isArray(m) ? m.join(', ') : typeof m === 'string' ? m : fb; };
+
     const [version, setVersion] = useState<ScheduleVersion | null>(null);
     const [lessons, setLessons] = useState<ScheduleLesson[]>([]);
     const [workloads, setWorkloads] = useState<Workload[]>([]);
     const [conflicts, setConflicts] = useState<ScheduleConflict[]>([]);
-    
-    // Состояния UI
+    const [classes, setClasses] = useState<SchoolClass[]>([]);
+    const [teachers, setTeachers] = useState<Teacher[]>([]);
+    const [subjects, setSubjects] = useState<Subject[]>([]);
+    const [rooms, setRooms] = useState<Room[]>([]);
+
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -58,405 +43,199 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ versionId }) => {
     const [selectedEntity, setSelectedEntity] = useState<number | null>(null);
     const [showUnplacedOnly, setShowUnplacedOnly] = useState(false);
     const [showConflicts, setShowConflicts] = useState(true);
-    
-    // Модальные окна
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [showSearch, setShowSearch] = useState(false);
+    const [weekTab, setWeekTab] = useState<'all' | 'odd' | 'even'>('all');
     const [autoGenerateOpen, setAutoGenerateOpen] = useState(false);
     const [exportOpen, setExportOpen] = useState(false);
     const [conflictPanelOpen, setConflictPanelOpen] = useState(false);
-    
-    // История для undo/redo
     const [history, setHistory] = useState<ScheduleLesson[][]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
 
-    // Загрузка данных
+    const terms = useMemo(() => {
+        const t = (version as any)?.institutionType;
+        if (t) return getTerms(t);
+        try { return getTerms(localStorage.getItem('plantakt_institution_type') || 'school'); } catch { return getTerms('school'); }
+    }, [version]);
+
+    const isOddEven = version?.weekType === 'odd_even';
+
     const loadSchedule = useCallback(async () => {
         try {
-            setLoading(true);
-            setError(null);
-
-            const data = await scheduleService.getVersion(versionId);
-            
-            setVersion(data.version);
-            setLessons(data.lessons);
-            setWorkloads(data.workloads);
-            setConflicts(data.conflicts);
-
-            // Инициализируем историю
-            setHistory([data.lessons]);
-            setHistoryIndex(0);
-        } catch (err: any) {
-            setError(err.response?.data?.message || 'Ошибка загрузки расписания');
-        } finally {
-            setLoading(false);
-        }
+            setLoading(true); setError(null);
+            const [data, cd, td, sd, rd] = await Promise.all([
+                scheduleService.getVersion(versionId), scheduleService.getClasses(),
+                scheduleService.getTeachers(), scheduleService.getSubjects(), scheduleService.getRooms(),
+            ]);
+            setVersion(data.version); setLessons(data.lessons);
+            setWorkloads(data.workloads); setConflicts(data.conflicts);
+            setClasses(Array.isArray(cd) ? cd : cd.classes || []);
+            setTeachers(Array.isArray(td) ? td : td.teachers || []);
+            setSubjects(Array.isArray(sd) ? sd : sd.subjects || []);
+            setRooms(Array.isArray(rd) ? rd : rd.rooms || []);
+            setHistory([data.lessons]); setHistoryIndex(0);
+        } catch (e: any) { setError(getErr(e, 'Ошибка загрузки')); }
+        finally { setLoading(false); }
     }, [versionId]);
 
-    useEffect(() => {
-        loadSchedule();
-    }, [loadSchedule]);
+    useEffect(() => { loadSchedule(); }, [loadSchedule]);
+    useEffect(() => { if (isOddEven && weekTab === 'all') setWeekTab('odd'); }, [isOddEven]);
 
-    // Сохранение в историю
-    const saveToHistory = useCallback((newLessons: ScheduleLesson[]) => {
-        setHistory(prev => {
-            const newHistory = prev.slice(0, historyIndex + 1);
-            newHistory.push(newLessons);
-            return newHistory;
-        });
-        setHistoryIndex(prev => prev + 1);
+    const saveToHistory = useCallback((nl: ScheduleLesson[]) => {
+        setHistory(p => { const h = p.slice(0, historyIndex + 1); h.push(nl); return h; });
+        setHistoryIndex(p => p + 1);
     }, [historyIndex]);
 
-    // Undo
-    const handleUndo = useCallback(() => {
-        if (historyIndex > 0) {
-            setHistoryIndex(prev => prev - 1);
-            setLessons(history[historyIndex - 1]);
-        }
-    }, [history, historyIndex]);
+    const handleUndo = useCallback(() => { if (historyIndex > 0) { setHistoryIndex(p => p - 1); setLessons(history[historyIndex - 1]); } }, [history, historyIndex]);
+    const handleRedo = useCallback(() => { if (historyIndex < history.length - 1) { setHistoryIndex(p => p + 1); setLessons(history[historyIndex + 1]); } }, [history, historyIndex]);
 
-    // Redo
-    const handleRedo = useCallback(() => {
-        if (historyIndex < history.length - 1) {
-            setHistoryIndex(prev => prev + 1);
-            setLessons(history[historyIndex + 1]);
-        }
-    }, [history, historyIndex]);
-
-    // Перемещение урока (drag & drop)
-    const handleLessonMove = useCallback(async (
-        lessonId: number,
-        targetSlot: { dayOfWeek: number; lessonNumber: number; weekType?: string },
-        roomId?: number,
-    ) => {
-        try {
-            setSaving(true);
-
-            const result = await scheduleService.moveLesson(lessonId, {
-                dayOfWeek: targetSlot.dayOfWeek,
-                lessonNumber: targetSlot.lessonNumber,
-                weekType: targetSlot.weekType,
-                roomId,
-            });
-
-            if (result.success && result.lesson) {
-                const movedLesson = result.lesson;
-                setLessons(prev => {
-                    const updated = prev.map(l => 
-                        l.id === lessonId ? movedLesson : l
-                    );
-                    saveToHistory(updated);
-                    return updated;
-                });
-
-                if (result.conflicts && result.conflicts.length > 0) {
-                    const newConflicts = result.conflicts;
-                    setConflicts(prev => {
-                        const filtered = prev.filter(c => !c.affectedLessons?.includes(lessonId));
-                        return [...filtered, ...newConflicts];
-                    });
-                }
-            } else {
-                setError(result.errors?.map((e: any) => e.reason).join(', ') || 'Невозможно разместить урок');
-            }
-        } catch (err: any) {
-            setError(err.response?.data?.message || 'Ошибка перемещения урока');
-        } finally {
-            setSaving(false);
-        }
+    const handleLessonMove = useCallback(async (lessonId: number, slot: any, roomId?: number) => {
+        try { setSaving(true);
+            const r = await scheduleService.moveLesson(lessonId, { dayOfWeek: slot.dayOfWeek, lessonNumber: slot.lessonNumber, weekType: slot.weekType, roomId });
+            if (r.success && r.lesson) { setLessons(p => { const u = p.map(l => l.id === lessonId ? r.lesson! : l); saveToHistory(u); return u; });
+                if (r.conflicts?.length) setConflicts(p => [...p.filter(c => !c.affectedLessons?.includes(lessonId)), ...r.conflicts!]);
+            } else setError(r.errors?.map((e: any) => e.reason).join(', ') || 'Невозможно');
+        } catch (e: any) { setError(getErr(e, 'Ошибка')); } finally { setSaving(false); }
     }, [saveToHistory]);
 
-    // Добавление урока из нагрузки
-    const handleWorkloadDrop = useCallback(async (
-        workloadId: number,
-        targetSlot: { dayOfWeek: number; lessonNumber: number; weekType?: string },
-        roomId?: number,
-    ) => {
-        try {
-            setSaving(true);
+    const handleWorkloadDrop = useCallback(async (wId: number, slot: any, roomId?: number) => {
+        try { setSaving(true);
+            const wt = isOddEven && weekTab !== 'all' ? weekTab : slot.weekType;
+            const r = await scheduleService.createLesson({ workloadId: wId, dayOfWeek: slot.dayOfWeek, lessonNumber: slot.lessonNumber, weekType: wt, roomId });
+            if (r.success && r.lesson) { setLessons(p => { const u = [...p, r.lesson!]; saveToHistory(u); return u; });
+                setWorkloads(p => p.map(w => w.id === wId ? { ...w, placedHours: (w.placedHours || 0) + 1 } : w));
+                if (r.conflicts?.length) setConflicts(p => [...p, ...r.conflicts!]);
+            } else setError(r.errors?.map((e: any) => e.reason).join(', ') || 'Невозможно');
+        } catch (e: any) { setError(getErr(e, 'Ошибка')); } finally { setSaving(false); }
+    }, [saveToHistory, isOddEven, weekTab]);
 
-            const result = await scheduleService.createLesson({
-                workloadId,
-                dayOfWeek: targetSlot.dayOfWeek,
-                lessonNumber: targetSlot.lessonNumber,
-                weekType: targetSlot.weekType,
-                roomId,
-            });
+    const handleSlotDrop = useCallback((id: number, slot: any, roomId?: number) => {
+        if (id > 0) handleLessonMove(id, slot, roomId);
+        else if (slot.workloadId) handleWorkloadDrop(slot.workloadId, slot, roomId);
+    }, [handleLessonMove, handleWorkloadDrop]);
 
-            if (result.success && result.lesson) {
-                const newLesson = result.lesson;
-                setLessons(prev => {
-                    const updated = [...prev, newLesson];
-                    saveToHistory(updated);
-                    return updated;
-                });
-
-                setWorkloads(prev => prev.map(w => {
-                    if (w.id === workloadId) {
-                        return { ...w, placedHours: (w.placedHours || 0) + 1 };
-                    }
-                    return w;
-                }));
-
-                if (result.conflicts && result.conflicts.length > 0) {
-                    const newConflicts = result.conflicts;
-                    setConflicts(prev => [...prev, ...newConflicts]);
-                }
-            } else {
-                setError(result.errors?.map((e: any) => e.reason).join(', ') || 'Невозможно разместить урок');
-            }
-        } catch (err: any) {
-            setError(err.response?.data?.message || 'Ошибка добавления урока');
-        } finally {
-            setSaving(false);
-        }
-    }, [saveToHistory]);
-
-    // Удаление урока
     const handleLessonRemove = useCallback(async (lessonId: number) => {
-        try {
-            setSaving(true);
-
-            const lesson = lessons.find(l => l.id === lessonId);
+        try { setSaving(true); const lesson = lessons.find(l => l.id === lessonId);
             await scheduleService.deleteLesson(lessonId);
-
-            setLessons(prev => {
-                const updated = prev.filter(l => l.id !== lessonId);
-                saveToHistory(updated);
-                return updated;
-            });
-
-            if (lesson) {
-                setWorkloads(prev => prev.map(w => {
-                    if (w.id === lesson.workloadId) {
-                        return { ...w, placedHours: Math.max(0, (w.placedHours || 0) - 1) };
-                    }
-                    return w;
-                }));
-            }
-
-            setConflicts(prev => prev.filter(c => !c.affectedLessons?.includes(lessonId)));
-        } catch (err: any) {
-            setError(err.response?.data?.message || 'Ошибка удаления урока');
-        } finally {
-            setSaving(false);
-        }
+            setLessons(p => { const u = p.filter(l => l.id !== lessonId); saveToHistory(u); return u; });
+            if (lesson) setWorkloads(p => p.map(w => w.id === lesson.workloadId ? { ...w, placedHours: Math.max(0, (w.placedHours || 0) - 1) } : w));
+            setConflicts(p => p.filter(c => !c.affectedLessons?.includes(lessonId)));
+        } catch (e: any) { setError(getErr(e, 'Ошибка')); } finally { setSaving(false); }
     }, [lessons, saveToHistory]);
 
-    // Автоматическое составление
-    const handleAutoGenerate = useCallback(async (options: any) => {
-        try {
-            setLoading(true);
-            setAutoGenerateOpen(false);
-
-            const result = await scheduleService.autoGenerate(versionId, options);
-
-            await loadSchedule();
-
-            if (result.status === 'completed') {
-                setError(null);
-            } else if (result.status === 'partial') {
-                setError(`Размещено ${result.statistics.placedWorkloads} уроков. ${result.unplacedWorkloads?.length || 0} нагрузок не удалось разместить.`);
-            } else {
-                setError('Не удалось составить расписание. Проверьте ограничения и нагрузку.');
-            }
-        } catch (err: any) {
-            setError(err.response?.data?.message || 'Ошибка автоматического составления');
-        } finally {
-            setLoading(false);
-        }
+    const handleAutoGenerate = useCallback(async (opts: any) => {
+        try { setIsGenerating(true); setAutoGenerateOpen(false);
+            const r = await scheduleService.autoGenerate(versionId, opts); await loadSchedule();
+            if (r.status === 'completed') setError(null);
+            else if (r.status === 'partial') setError(`Размещено ${r.statistics.placedWorkloads}. ${r.unplacedWorkloads?.length || 0} не удалось.`);
+            else setError('Не удалось составить расписание.');
+        } catch (e: any) { setError(getErr(e, 'Ошибка')); } finally { setIsGenerating(false); }
     }, [versionId, loadSchedule]);
 
-    // Подсчёт статистики
+    const handleAddWorkload = useCallback(async (data: any) => {
+        try { await scheduleService.createWorkload(versionId, data); await loadSchedule(); }
+        catch (e: any) { setError(getErr(e, 'Ошибка нагрузки')); }
+    }, [versionId, loadSchedule]);
+
+    const handleDeleteWorkload = useCallback(async (wId: number) => {
+        try { await scheduleService.deleteWorkload(wId); setWorkloads(p => p.filter(w => w.id !== wId)); }
+        catch (e: any) { setError(getErr(e, 'Ошибка')); }
+    }, []);
+
     const hardConflicts = conflicts.filter(c => c.type === 'hard').length;
     const softConflicts = conflicts.filter(c => c.type === 'soft').length;
     const unplacedWorkloads = workloads.filter(w => (w.placedHours || 0) < w.hoursPerWeek).length;
-    const totalHours = workloads.reduce((sum, w) => sum + w.hoursPerWeek, 0);
-    const placedHours = workloads.reduce((sum, w) => sum + (w.placedHours || 0), 0);
+    const totalHours = workloads.reduce((s, w) => s + w.hoursPerWeek, 0);
+    const placedHours = workloads.reduce((s, w) => s + (w.placedHours || 0), 0);
 
-    if (loading && !version) {
-        return (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
-                <CircularProgress />
-            </Box>
-        );
-    }
+    const weekFilteredLessons = useMemo(() => {
+        if (!isOddEven || weekTab === 'all') return lessons;
+        return lessons.filter(l => { if (l.weekType === WorkloadWeekType.BOTH) return true;
+            if (weekTab === 'odd') return l.weekType === WorkloadWeekType.ODD;
+            if (weekTab === 'even') return l.weekType === WorkloadWeekType.EVEN; return true; });
+    }, [lessons, isOddEven, weekTab]);
+
+    const highlightedLessonIds = useMemo(() => {
+        const set = new Set<number>(); if (!searchQuery.trim()) return set;
+        const q = searchQuery.trim().toLowerCase();
+        weekFilteredLessons.forEach(l => { const w = l.workload;
+            const texts = [w?.subject?.name, w?.subject?.shortName, w?.teacher?.fullName, w?.teacher?.shortName,
+                w?.schoolClass?.name, w?.room?.name, l.room?.name, w?.group?.name].filter(Boolean).map(t => t!.toLowerCase());
+            if (texts.some(t => t.includes(q))) set.add(l.id); }); return set;
+    }, [searchQuery, weekFilteredLessons]);
+
+    if (loading && !version) return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}><CircularProgress /></Box>;
 
     return (
         <DndProvider backend={HTML5Backend}>
             <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-                {/* Toolbar */}
-                <Paper sx={{ p: 1, display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
-                    <Typography variant="h6" sx={{ flexGrow: 0, mr: 2 }}>
-                        {version?.name}
-                    </Typography>
-
-                    {/* Статусы */}
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                        {hardConflicts > 0 && (
-                            <Chip
-                                icon={<ErrorIcon />}
-                                label={`${hardConflicts} ошибок`}
-                                color="error"
-                                size="small"
-                                onClick={() => setConflictPanelOpen(true)}
-                            />
-                        )}
-                        {softConflicts > 0 && (
-                            <Chip
-                                icon={<Warning />}
-                                label={`${softConflicts} предупреждений`}
-                                color="warning"
-                                size="small"
-                                onClick={() => setConflictPanelOpen(true)}
-                            />
-                        )}
-                        {hardConflicts === 0 && softConflicts === 0 && (
-                            <Chip
-                                icon={<CheckCircle />}
-                                label="Нет конфликтов"
-                                color="success"
-                                size="small"
-                            />
-                        )}
-                        <Chip
-                            label={`${placedHours}/${totalHours} часов`}
-                            variant="outlined"
-                            size="small"
-                        />
+                <Paper sx={{ p: 1, display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0, flexWrap: 'wrap' }}>
+                    {onBack && <IconButton onClick={onBack} title="Назад" size="small"><ArrowBack /></IconButton>}
+                    <Typography variant="h6" sx={{ flexGrow: 0, mr: 1 }} noWrap>{version?.name}</Typography>
+                    <Box sx={{ display: 'flex', gap: 0.5 }}>
+                        {hardConflicts > 0 && <Chip icon={<ErrorIcon />} label={`${hardConflicts} ош.`} color="error" size="small" onClick={() => setConflictPanelOpen(true)} />}
+                        {softConflicts > 0 && <Chip icon={<Warning />} label={`${softConflicts} пред.`} color="warning" size="small" onClick={() => setConflictPanelOpen(true)} />}
+                        {hardConflicts === 0 && softConflicts === 0 && <Chip icon={<CheckCircle />} label="OK" color="success" size="small" />}
+                        <Chip label={`${placedHours}/${totalHours}`} variant="outlined" size="small" />
                     </Box>
-
                     <Box sx={{ flexGrow: 1 }} />
-
-                    {/* Действия */}
-                    <IconButton
-                        onClick={handleUndo}
-                        disabled={historyIndex <= 0}
-                        title="Отменить (Ctrl+Z)"
-                    >
-                        <Undo />
-                    </IconButton>
-                    <IconButton
-                        onClick={handleRedo}
-                        disabled={historyIndex >= history.length - 1}
-                        title="Повторить (Ctrl+Y)"
-                    >
-                        <Redo />
-                    </IconButton>
-
-                    <Button
-                        variant="contained"
-                        startIcon={<PlayArrow />}
-                        onClick={() => setAutoGenerateOpen(true)}
-                        disabled={loading}
-                    >
-                        Авто
-                    </Button>
-
-                    <Button
-                        variant="outlined"
-                        startIcon={<Download />}
-                        onClick={() => setExportOpen(true)}
-                    >
-                        Экспорт
-                    </Button>
-
-                    <IconButton onClick={loadSchedule} disabled={loading}>
-                        <Refresh />
-                    </IconButton>
+                    {showSearch ? (
+                        <TextField size="small" placeholder={`Поиск: предмет, ${terms.teacherLabel.toLowerCase()}...`}
+                            value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} autoFocus sx={{ width: 280 }}
+                            InputProps={{ startAdornment: <InputAdornment position="start"><Search fontSize="small" /></InputAdornment>,
+                                endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => { setSearchQuery(''); setShowSearch(false); }}><Close fontSize="small" /></IconButton></InputAdornment> }} />
+                    ) : <IconButton onClick={() => setShowSearch(true)} title="Поиск"><Search /></IconButton>}
+                    <IconButton onClick={handleUndo} disabled={historyIndex <= 0}><Undo /></IconButton>
+                    <IconButton onClick={handleRedo} disabled={historyIndex >= history.length - 1}><Redo /></IconButton>
+                    <Button variant="contained" size="small" startIcon={<PlayArrow />} onClick={() => setAutoGenerateOpen(true)} disabled={loading || isGenerating}>Авто</Button>
+                    <Button variant="outlined" size="small" startIcon={<Download />} onClick={() => setExportOpen(true)}>Экспорт</Button>
+                    <IconButton onClick={loadSchedule} disabled={loading}><Refresh /></IconButton>
                 </Paper>
-
-                {/* Ошибка */}
-                {error && (
-                    <Alert severity="error" onClose={() => setError(null)} sx={{ m: 1 }}>
-                        {error}
-                    </Alert>
-                )}
-
-                {/* Основной контент */}
+                {searchQuery.trim() && <Alert severity="info" sx={{ mx: 1, mt: 0.5 }} action={<Button size="small" onClick={() => { setSearchQuery(''); setShowSearch(false); }}>Сбросить</Button>}>Найдено: {highlightedLessonIds.size}</Alert>}
+                {error && <Alert severity="error" onClose={() => setError(null)} sx={{ m: 1 }}>{error}</Alert>}
                 <Box sx={{ display: 'flex', flexGrow: 1, overflow: 'hidden' }}>
-                    {/* Панель нагрузки (левая) */}
-                    <WorkloadPanel
-                        workloads={workloads}
-                        showUnplacedOnly={showUnplacedOnly}
-                        onToggleFilter={() => setShowUnplacedOnly(prev => !prev)}
-                        onWorkloadDrop={handleWorkloadDrop}
-                    />
-
-                    {/* Сетка расписания (центр) */}
+                    <WorkloadPanel workloads={workloads} showUnplacedOnly={showUnplacedOnly}
+                        onToggleFilter={() => setShowUnplacedOnly(p => !p)} onWorkloadDrop={handleWorkloadDrop}
+                        onAddWorkload={handleAddWorkload} onDeleteWorkload={handleDeleteWorkload}
+                        classes={classes} teachers={teachers} subjects={subjects} rooms={rooms} />
                     <Box sx={{ flexGrow: 1, overflow: 'auto', p: 1 }}>
-                        {/* Переключатель вида */}
-                        <Tabs
-                            value={viewMode}
-                            onChange={(_, v) => setViewMode(v)}
-                            sx={{ mb: 1 }}
-                        >
-                            <Tab value="class" label="По классам" />
-                            <Tab value="teacher" label="По учителям" />
-                            <Tab value="room" label="По кабинетам" />
+                        <Tabs value={viewMode} onChange={(_, v) => { setViewMode(v); setSelectedEntity(null); }} sx={{ mb: 1 }}>
+                            <Tab value="class" label={terms.byClassTab} />
+                            <Tab value="teacher" label={terms.byTeacherTab} />
+                            <Tab value="room" label={terms.byRoomTab} />
                         </Tabs>
-
+                        {isOddEven && (
+                            <Paper sx={{ mb: 1, display: 'inline-flex', borderRadius: 2, overflow: 'hidden' }}>
+                                <Tabs value={weekTab} onChange={(_, v) => setWeekTab(v)} TabIndicatorProps={{ sx: { height: 3 } }}>
+                                    <Tab value="odd" label="I неделя (нечётная)" sx={{ bgcolor: weekTab === 'odd' ? '#e3f2fd' : 'transparent', minHeight: 36 }} />
+                                    <Tab value="even" label="II неделя (чётная)" sx={{ bgcolor: weekTab === 'even' ? '#fce4ec' : 'transparent', minHeight: 36 }} />
+                                </Tabs>
+                            </Paper>
+                        )}
+                        <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 1 }}>
+                            {viewMode === 'class' && classes.map(c => <Chip key={c.id} label={c.name} size="small" variant={selectedEntity === c.id ? 'filled' : 'outlined'} color={selectedEntity === c.id ? 'primary' : 'default'} onClick={() => setSelectedEntity(selectedEntity === c.id ? null : c.id)} sx={{ cursor: 'pointer' }} />)}
+                            {viewMode === 'teacher' && teachers.map(t => <Chip key={t.id} label={t.shortName || t.fullName} size="small" variant={selectedEntity === t.id ? 'filled' : 'outlined'} color={selectedEntity === t.id ? 'primary' : 'default'} onClick={() => setSelectedEntity(selectedEntity === t.id ? null : t.id)} sx={{ cursor: 'pointer' }} />)}
+                            {viewMode === 'room' && rooms.map(r => <Chip key={r.id} label={r.name} size="small" variant={selectedEntity === r.id ? 'filled' : 'outlined'} color={selectedEntity === r.id ? 'primary' : 'default'} onClick={() => setSelectedEntity(selectedEntity === r.id ? null : r.id)} sx={{ cursor: 'pointer' }} />)}
+                        </Box>
                         <ScheduleGrid
-                            lessons={lessons}
-                            viewMode={viewMode}
-                            selectedEntity={selectedEntity}
-                            conflicts={showConflicts ? conflicts : []}
-                            weekType={version?.weekType || 'single'}
-                            maxLessons={version?.maxLessonsPerDay || 7}
-                            onLessonMove={handleLessonMove}
-                            onLessonRemove={handleLessonRemove}
-                            onSlotClick={(slot) => console.log('Slot clicked:', slot)}
-                        />
+                            lessons={selectedEntity ? weekFilteredLessons.filter(l => { const w = l.workload;
+                                if (viewMode === 'class') return w?.schoolClass?.id === selectedEntity || l.schoolClass?.id === selectedEntity;
+                                if (viewMode === 'teacher') return w?.teacher?.id === selectedEntity || l.teacher?.id === selectedEntity;
+                                if (viewMode === 'room') return l.roomId === selectedEntity || l.room?.id === selectedEntity || w?.room?.id === selectedEntity;
+                                return true; }) : weekFilteredLessons}
+                            viewMode={viewMode} selectedEntity={selectedEntity} conflicts={showConflicts ? conflicts : []}
+                            weekType="single" maxLessons={version?.maxLessonsPerDay || 7}
+                            workingDays={version?.workingDays || 31} highlightedLessonIds={highlightedLessonIds}
+                            onLessonMove={handleSlotDrop} onLessonRemove={handleLessonRemove} onSlotClick={(s) => console.log('Slot:', s)} />
                     </Box>
                 </Box>
-
-                {/* Панель конфликтов (правая, drawer) */}
-                <Drawer
-                    anchor="right"
-                    open={conflictPanelOpen}
-                    onClose={() => setConflictPanelOpen(false)}
-                >
-                    <ConflictPanel
-                        conflicts={conflicts}
-                        onConflictClick={(conflict) => {
-                            console.log('Conflict clicked:', conflict);
-                        }}
-                        onClose={() => setConflictPanelOpen(false)}
-                    />
+                <Drawer anchor="right" open={conflictPanelOpen} onClose={() => setConflictPanelOpen(false)}>
+                    <ConflictPanel conflicts={conflicts} onConflictClick={(c) => console.log(c)} onClose={() => setConflictPanelOpen(false)} />
                 </Drawer>
-
-                {/* Модальные окна */}
-                <AutoGenerateModal
-                    open={autoGenerateOpen}
-                    onClose={() => setAutoGenerateOpen(false)}
-                    onGenerate={handleAutoGenerate}
-                    unplacedCount={unplacedWorkloads}
-                />
-
-                <ExportModal
-                    open={exportOpen}
-                    onClose={() => setExportOpen(false)}
-                    versionId={versionId}
-                />
-
-                {/* Индикатор сохранения */}
-                {saving && (
-                    <Box
-                        sx={{
-                            position: 'fixed',
-                            bottom: 16,
-                            right: 16,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1,
-                            bgcolor: 'background.paper',
-                            p: 1,
-                            borderRadius: 1,
-                            boxShadow: 2,
-                        }}
-                    >
-                        <CircularProgress size={20} />
-                        <Typography variant="body2">Сохранение...</Typography>
-                    </Box>
-                )}
+                <AutoGenerateModal open={autoGenerateOpen} onClose={() => setAutoGenerateOpen(false)} onGenerate={handleAutoGenerate} unplacedCount={unplacedWorkloads} isGenerating={isGenerating} />
+                <ExportModal open={exportOpen} onClose={() => setExportOpen(false)} versionId={versionId} />
+                {saving && <Box sx={{ position: 'fixed', bottom: 16, right: 16, display: 'flex', alignItems: 'center', gap: 1, bgcolor: 'background.paper', p: 1, borderRadius: 1, boxShadow: 2 }}><CircularProgress size={20} /><Typography variant="body2">Сохранение...</Typography></Box>}
             </Box>
         </DndProvider>
     );

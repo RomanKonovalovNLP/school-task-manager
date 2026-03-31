@@ -12,7 +12,11 @@ export class BellSchedule {
     @PrimaryGeneratedColumn()
     id: number;
 
-    @Column({ name: 'version_id' })
+    // Привязка к школе (для глобальных звонков без привязки к версии)
+    @Column({ name: 'school_id', nullable: true })
+    schoolId: number;
+
+    @Column({ name: 'version_id', nullable: true })
     versionId: number;
 
     @ManyToOne(() => ScheduleVersion, (version) => version.bellSchedule, { onDelete: 'CASCADE' })
@@ -34,6 +38,10 @@ export class BellSchedule {
     // Продолжительность перемены после этого урока (минуты)
     @Column({ name: 'break_after', type: 'int', default: 10 })
     breakAfter: number;
+
+    // Смена (1 = первая, 2 = вторая)
+    @Column({ type: 'int', nullable: true, default: 1 })
+    shift: number;
 
     // Название (опционально, например "Большая перемена")
     @Column({ type: 'varchar', length: 100, nullable: true })

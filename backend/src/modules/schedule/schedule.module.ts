@@ -16,6 +16,7 @@ import { BellSchedule } from './entities/bell-schedule.entity';
 import { TeacherAvailability } from './entities/teacher-availability.entity';
 import { ScheduleConflict } from './entities/schedule-conflict.entity';
 import { SanpinRule } from './entities/sanpin-rule.entity';
+import { CalendarDay } from './entities/calendar-day.entity';
 
 // Controllers
 import { ClassesController } from './controllers/classes.controller';
@@ -26,6 +27,8 @@ import { ScheduleVersionsController } from './controllers/schedule-versions.cont
 import { WorkloadsController } from './controllers/workloads.controller';
 import { LessonsController } from './controllers/lessons.controller';
 import { SubstitutionsController } from './controllers/substitutions.controller';
+import { CalendarController } from './controllers/calendar.controller';
+import { BellScheduleController } from './controllers/bell-schedule.controller';
 
 // Services
 import { ClassesService } from './services/classes.service';
@@ -42,6 +45,8 @@ import { ScheduleExportService } from './services/schedule-export.service';
 // Solver
 import { ScheduleSolverService } from './solver/schedule-solver.service';
 import { SanpinRulesService } from './solver/sanpin-rules.service';
+import { CalendarService } from './services/calendar.service';
+import { BellScheduleService } from './services/bell-schedule.service';
 
 @Module({
     imports: [
@@ -60,6 +65,7 @@ import { SanpinRulesService } from './solver/sanpin-rules.service';
             TeacherAvailability,
             ScheduleConflict,
             SanpinRule,
+            CalendarDay,
         ]),
     ],
     controllers: [
@@ -71,6 +77,8 @@ import { SanpinRulesService } from './solver/sanpin-rules.service';
         WorkloadsController,
         LessonsController,
         SubstitutionsController,
+        CalendarController,
+        BellScheduleController,
     ],
     providers: [
         ClassesService,
@@ -85,6 +93,8 @@ import { SanpinRulesService } from './solver/sanpin-rules.service';
         ScheduleExportService,
         ScheduleSolverService,
         SanpinRulesService,
+        CalendarService,
+        BellScheduleService,
     ],
     exports: [
         ClassesService,

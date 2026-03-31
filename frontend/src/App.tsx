@@ -17,6 +17,8 @@ import SuperAdminLoginPage from './pages/SuperAdminLoginPage';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
 import ScheduleDashboard from './pages/ScheduleDashboard';
 import ScheduleEditorPage from './pages/ScheduleEditorPage';
+import ScheduleManagementPage from './pages/ScheduleManagementPage';
+import ScheduleViewPage from './pages/ScheduleViewPage';
 
 const theme = createTheme({
     palette: {
@@ -101,6 +103,8 @@ const AppContent: React.FC = () => {
     const dispatch = useAppDispatch();
 
     useEffect(() => {
+        document.title = 'ПланТакт';
+
         // Восстановить сессию из localStorage
         const userStr = localStorage.getItem('user');
         const sessionToken = store.getState().auth.sessionToken;
@@ -181,6 +185,58 @@ const AppContent: React.FC = () => {
                         <PrivateRoute>
                             <CategoryCheckWrapper>
                                 <ProfilePage />
+                            </CategoryCheckWrapper>
+                        </PrivateRoute>
+                    }
+                />
+                {/* Расписание — просмотр для ВСЕХ пользователей */}
+                <Route
+                    path="/schedule"
+                    element={
+                        <PrivateRoute>
+                            <CategoryCheckWrapper>
+                                <ScheduleViewPage />
+                            </CategoryCheckWrapper>
+                        </PrivateRoute>
+                    }
+                />
+                {/* Управление расписаниями — только для админов */}
+                <Route
+                    path="/schedule/admin"
+                    element={
+                        <AdminRoute>
+                            <CategoryCheckWrapper>
+                                <ScheduleDashboard />
+                            </CategoryCheckWrapper>
+                        </AdminRoute>
+                    }
+                />
+                <Route
+                    path="/schedule/manage"
+                    element={
+                        <AdminRoute>
+                            <CategoryCheckWrapper>
+                                <ScheduleManagementPage />
+                            </CategoryCheckWrapper>
+                        </AdminRoute>
+                    }
+                />
+                <Route
+                    path="/schedule/editor/:versionId"
+                    element={
+                        <AdminRoute>
+                            <CategoryCheckWrapper>
+                                <ScheduleEditorPage />
+                            </CategoryCheckWrapper>
+                        </AdminRoute>
+                    }
+                />
+                <Route
+                    path="/schedule/view/:versionId"
+                    element={
+                        <PrivateRoute>
+                            <CategoryCheckWrapper>
+                                <ScheduleViewPage />
                             </CategoryCheckWrapper>
                         </PrivateRoute>
                     }
