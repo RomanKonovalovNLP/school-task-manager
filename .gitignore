@@ -49,3 +49,8 @@ backend/uploads/
 env.production
 */env.production
 env.*.local
+
+# Файл с паролями и доступами — НИКОГДА не коммитить
+SECRETS.local.md
+*.local.md
+secrets*
