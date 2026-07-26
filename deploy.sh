@@ -93,23 +93,47 @@ fi
 DOMAIN="${DOMAIN:-plantakt.ru}"
 CERTS_VOLUME="${CERTS_VOLUME:-plantakt_certbot_certs}"
 
-if ! docker run --rm -v "$CERTS_VOLUME":/etc/letsencrypt alpine \
+# Важно: docker run с несуществующим томом СОЗДАЁТ пустой том, поэтому сначала
+# убеждаемся, что том вообще есть — иначе можно подменить рабочие сертификаты.
+if ! docker volume inspect "$CERTS_VOLUME" >/dev/null 2>&1; then
+    echo ">>> Том с сертификатами ($CERTS_VOLUME) не найден — будет создан при запуске"
+fi
+
+HAS_CERT=0
+if docker volume inspect "$CERTS_VOLUME" >/dev/null 2>&1 && \
+   docker run --rm -v "$CERTS_VOLUME":/etc/letsencrypt alpine \
         test -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" 2>/dev/null; then
-    echo ">>> Сертификата нет — создаю временный самоподписанный"
-    echo "    (иначе nginx не стартует и сайт будет недоступен)"
+    HAS_CERT=1
+fi
+
+if [ "$HAS_CERT" = "0" ]; then
+    echo ">>> Настоящего сертификата нет — создаю временный самоподписанный,"
+    echo "    иначе nginx не стартует и сайт будет недоступен целиком."
     docker run --rm -v "$CERTS_VOLUME":/etc/letsencrypt alpine sh -c "
         apk add --no-cache openssl >/dev/null 2>&1
         mkdir -p /etc/letsencrypt/live/$DOMAIN
         openssl req -x509 -nodes -newkey rsa:2048 -days 3 \
             -keyout /etc/letsencrypt/live/$DOMAIN/privkey.pem \
             -out /etc/letsencrypt/live/$DOMAIN/fullchain.pem \
-            -subj '/CN=$DOMAIN' >/dev/null 2>&1"
-    echo "    после запуска выпустите настоящий: bash deploy.sh --ssl"
+            -subj '/CN=$DOMAIN' >/dev/null 2>&1
+        # Метка, чтобы отличать заглушку от настоящего сертификата
+        touch /etc/letsencrypt/live/$DOMAIN/.self-signed"
+    echo
+    echo "    ВНИМАНИЕ: браузер будет ругаться на сертификат."
+    echo "    Выпустите настоящий сразу после деплоя:  bash deploy.sh --ssl"
+    echo
 fi
 
 # Выпуск или обновление настоящего сертификата Let's Encrypt
 if [ "${1:-}" = "--ssl" ]; then
     echo ">>> Запрашиваю сертификат для $DOMAIN..."
+    # Если сейчас стоит наша заглушка — удаляем, certbot не любит чужие файлы
+    if docker run --rm -v "$CERTS_VOLUME":/etc/letsencrypt alpine \
+            test -f "/etc/letsencrypt/live/$DOMAIN/.self-signed" 2>/dev/null; then
+        echo "    убираю временный самоподписанный сертификат"
+        docker run --rm -v "$CERTS_VOLUME":/etc/letsencrypt alpine sh -c \
+            "rm -rf /etc/letsencrypt/live/$DOMAIN /etc/letsencrypt/archive/$DOMAIN /etc/letsencrypt/renewal/$DOMAIN.conf"
+    fi
     docker compose up -d nginx
     docker compose run --rm --entrypoint "" certbot \
         certbot certonly --webroot -w /var/www/certbot \
