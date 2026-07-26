@@ -12,7 +12,9 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/root/plantakt}"
-REPO_URL="https://github.com/RomanKonovalovNLP/school-task-manager.git"
+# Приватный репозиторий требует доступа по ключу (см. scripts/setup-deploy-key.sh).
+# Для публичного репозитория можно передать HTTPS-адрес: REPO_URL=https://... bash deploy.sh
+REPO_URL="${REPO_URL:-git@github.com:RomanKonovalovNLP/school-task-manager.git}"
 BRANCH="${BRANCH:-main}"
 
 echo "=== ПланТакт: деплой ==="
