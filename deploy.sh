@@ -127,10 +127,13 @@ fi
 # Выпуск или обновление настоящего сертификата Let's Encrypt
 if [ "${1:-}" = "--ssl" ]; then
     echo ">>> Запрашиваю сертификат для $DOMAIN..."
-    # Если сейчас стоит наша заглушка — удаляем, certbot не любит чужие файлы
-    if docker run --rm -v "$CERTS_VOLUME":/etc/letsencrypt alpine \
-            test -f "/etc/letsencrypt/live/$DOMAIN/.self-signed" 2>/dev/null; then
-        echo "    убираю временный самоподписанный сертификат"
+    # Убираем сертификат, который не принадлежит certbot (наша заглушка или
+    # остатки прежних попыток). Признак «своего» сертификата — файл настроек
+    # обновления renewal/<домен>.conf; без него certbot откажется работать
+    # с существующей папкой live и упадёт с «live directory exists».
+    if docker run --rm -v "$CERTS_VOLUME":/etc/letsencrypt alpine sh -c \
+            "test -d /etc/letsencrypt/live/$DOMAIN && ! test -f /etc/letsencrypt/renewal/$DOMAIN.conf" 2>/dev/null; then
+        echo "    убираю посторонний сертификат (заглушку) перед выпуском"
         docker run --rm -v "$CERTS_VOLUME":/etc/letsencrypt alpine sh -c \
             "rm -rf /etc/letsencrypt/live/$DOMAIN /etc/letsencrypt/archive/$DOMAIN /etc/letsencrypt/renewal/$DOMAIN.conf"
     fi
