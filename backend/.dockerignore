@@ -4,3 +4,11 @@ dist
 *.md
 .env
 uploads
+
+# Вспомогательные скрипты разработки в корне backend/: в образе не нужны
+# и ломают структуру сборки (dist/src/main.js вместо dist/main.js)
+seed-school1.ts
+school1-dataset.ts
+solver-sim.ts
+solver-sim-weeks.ts
+scripts
