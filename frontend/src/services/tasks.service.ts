@@ -1,6 +1,13 @@
 import api from './api';
 import { Task, CreateTaskDto, UpdateTaskDto, TaskView } from '../types';
 
+export interface TaskGroup {
+    id: number;
+    name: string;
+    sortOrder: number;
+    taskIds: number[];
+}
+
 export interface TaskAttachment {
     id: number;
     taskId: number;
@@ -9,6 +16,7 @@ export interface TaskAttachment {
     mimeType: string;
     fileSize: number;
     uploaderName: string;
+    uploaderIsPrivileged?: boolean;
     uploadedAt: string;
 }
 
@@ -22,17 +30,38 @@ export interface CompletionStatusDetailed {
     }>;
 }
 
+// Режим «Сегодня» (фокус)
+export interface FocusTask extends Task {
+    isAuto: boolean;            // срочная — добавлена автоматически, убрать нельзя
+    isCompletedByUser: boolean;
+}
+
+export interface TodayFocus {
+    date: string;
+    total: number;
+    completed: number;
+    allDone: boolean;
+    tasks: FocusTask[];
+}
+
+export interface FocusActionResult {
+    success: boolean;
+    reason?: 'auto';
+    alreadyAuto?: boolean;
+    message?: string;
+}
+
 export const tasksService = {
     async getAll(filters?: {
-        category?: string;
-        priority?: string;
+        category?: string[];
+        priority?: string[];
         creatorName?: string;
         showShared?: boolean;
         showPersonal?: boolean;
     }): Promise<Task[]> {
         const params = new URLSearchParams();
-        if (filters?.category) params.append('category', filters.category);
-        if (filters?.priority) params.append('priority', filters.priority);
+        if (filters?.category && filters.category.length) params.append('category', filters.category.join(','));
+        if (filters?.priority && filters.priority.length) params.append('priority', filters.priority.join(','));
         if (filters?.creatorName) params.append('creatorName', filters.creatorName);
         // FIX #2, #3: Фильтры по типу задач
         if (filters?.showShared === false) params.append('showShared', 'false');
@@ -45,6 +74,60 @@ export const tasksService = {
     async getById(id: number): Promise<Task> {
         const response = await api.get<Task>(`/tasks/${id}`);
         return response.data;
+    },
+
+    // ==================== Режим «Сегодня» (фокус) ====================
+
+    /** План на сегодня: срочные автоматически + добавленные вручную */
+    async getTodayFocus(): Promise<TodayFocus> {
+        const response = await api.get<TodayFocus>('/tasks/focus/today');
+        return response.data;
+    },
+
+    /** Задачи, которые можно добавить в план (в т.ч. с дедлайном не сегодня) */
+    async getTodayFocusCandidates(): Promise<Task[]> {
+        const response = await api.get<Task[]>('/tasks/focus/today/candidates');
+        return response.data;
+    },
+
+    async addToTodayFocus(taskId: number): Promise<FocusActionResult> {
+        const response = await api.post<FocusActionResult>(`/tasks/focus/today/${taskId}`);
+        return response.data;
+    },
+
+    /** Убрать из плана. Срочную убрать нельзя — вернётся success:false с пояснением */
+    async removeFromTodayFocus(taskId: number): Promise<FocusActionResult> {
+        const response = await api.delete<FocusActionResult>(`/tasks/focus/today/${taskId}`);
+        return response.data;
+    },
+
+    // ==================== Персональные группы задач ====================
+
+    async getGroups(): Promise<TaskGroup[]> {
+        const response = await api.get<TaskGroup[]>('/tasks/groups');
+        return response.data;
+    },
+
+    async createGroup(name: string): Promise<TaskGroup> {
+        const response = await api.post<TaskGroup>('/tasks/groups', { name });
+        return response.data;
+    },
+
+    async renameGroup(id: number, name: string): Promise<{ id: number; name: string }> {
+        const response = await api.patch(`/tasks/groups/${id}`, { name });
+        return response.data;
+    },
+
+    async deleteGroup(id: number): Promise<void> {
+        await api.delete(`/tasks/groups/${id}`);
+    },
+
+    async addTaskToGroup(groupId: number, taskId: number): Promise<void> {
+        await api.post(`/tasks/groups/${groupId}/items`, { taskId });
+    },
+
+    async removeTaskFromGroup(taskId: number): Promise<void> {
+        await api.delete(`/tasks/groups/items/${taskId}`);
     },
 
     async create(data: CreateTaskDto): Promise<Task> {

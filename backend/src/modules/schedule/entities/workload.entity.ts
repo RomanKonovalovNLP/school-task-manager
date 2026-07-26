@@ -96,6 +96,12 @@ export class Workload {
     @Column({ type: 'int', nullable: true })
     difficulty: number;
 
+    // Разрешить сдвоенные уроки (пары): два часа предмета подряд в один день.
+    // По умолчанию false — часы распределяются по разным дням (норма для школы).
+    // Включается для профильных предметов старших классов, где пары уместны.
+    @Column({ name: 'allow_double_lessons', type: 'boolean', default: false })
+    allowDoubleLessons: boolean;
+
     // Дополнительные классы (для объединённых уроков)
     @Column({ name: 'additional_class_ids', type: 'simple-array', nullable: true })
     additionalClassIds: number[];

@@ -46,8 +46,8 @@ export const scheduleService = {
         await api.delete(`/schedule/versions/${id}`);
     },
 
-    async copyVersion(id: number, name: string): Promise<ScheduleVersion> {
-        const response = await api.post(`/schedule/versions/${id}/copy`, { name });
+    async copyVersion(id: number, name: string, type?: string): Promise<ScheduleVersion> {
+        const response = await api.post(`/schedule/versions/${id}/copy`, { name, type });
         return response.data;
     },
 
@@ -58,6 +58,11 @@ export const scheduleService = {
 
     async publishVersion(id: number): Promise<ScheduleVersion> {
         const response = await api.post(`/schedule/versions/${id}/publish`);
+        return response.data;
+    },
+
+    async unpublishVersion(id: number): Promise<ScheduleVersion> {
+        const response = await api.post(`/schedule/versions/${id}/unpublish`);
         return response.data;
     },
 
@@ -150,10 +155,45 @@ export const scheduleService = {
         newTeacherId?: number;
         newRoomId?: number;
         newSubjectId?: number;
+        newDayOfWeek?: number;
+        newLessonNumber?: number;
+        newWeekType?: string;
         isCancelled?: boolean;
         reason?: string;
     }): Promise<Substitution> {
         const response = await api.post('/schedule/substitutions', data);
+        return response.data;
+    },
+
+    async getSubstitutionsByVersion(versionId: number): Promise<Substitution[]> {
+        const response = await api.get('/schedule/substitutions/by-version', { params: { versionId } });
+        return response.data;
+    },
+
+    async deleteSubstitution(id: number): Promise<void> {
+        await api.delete(`/schedule/substitutions/${id}`);
+    },
+
+    async getAvailableForSlot(
+        lessonId: number,
+        targetDayOfWeek?: number,
+        targetLessonNumber?: number,
+        date?: string,
+    ): Promise<{
+        availableTeachers: { id: number; name: string; subjects: string[]; currentLoad: number; suitability: number }[];
+        availableRooms: { id: number; name: string; capacity: number; type: string }[];
+    }> {
+        const response = await api.get('/schedule/substitutions/available', {
+            params: { lessonId, targetDayOfWeek, targetLessonNumber, date },
+        });
+        return response.data;
+    },
+
+    async exportSubstitutions(versionId: number): Promise<Blob> {
+        const response = await api.get('/schedule/substitutions/export', {
+            params: { versionId },
+            responseType: 'blob',
+        });
         return response.data;
     },
 
@@ -178,9 +218,11 @@ export const scheduleService = {
         versionId: number,
         options: {
             format: 'xlsx' | 'pdf' | 'html';
-            view: 'class' | 'teacher' | 'room';
+            view: 'class' | 'teacher' | 'room' | 'master';
             ids?: number[];
             weekType?: 'odd' | 'even';
+            paper?: 'a4' | 'a5';
+            date?: string;
         },
     ): Promise<Blob> {
         const response = await api.get(`/schedule/versions/${versionId}/export`, {

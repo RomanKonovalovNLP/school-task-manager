@@ -30,6 +30,6 @@ export class EventTaskCompletion {
     @JoinColumn({ name: 'user_profile_id' })
     userProfile: UserProfile;
 
-    @CreateDateColumn({ name: 'completed_at' })
+    @CreateDateColumn({ name: 'completed_at', type: 'timestamptz' })
     completedAt: Date;
 }

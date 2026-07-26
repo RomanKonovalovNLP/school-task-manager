@@ -1,13 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import './App.css';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Provider } from 'react-redux';
+import { CelebrationProvider } from './components/celebration/CelebrationProvider';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
+import { ColorModeContext, ThemeMode } from './theme/colorMode';
 import { store } from './store/store';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import ProfilePage from './pages/ProfilePage';
 import EventsPage from './pages/EventsPage';
+import TodayPage from './pages/TodayPage';
 import { useAppDispatch, useAppSelector } from './hooks/useRedux';
 import { restoreSession } from './store/slices/authSlice';
 import StatisticsDashboard from './components/statistics/StatisticsDashboard';
@@ -19,17 +22,19 @@ import ScheduleDashboard from './pages/ScheduleDashboard';
 import ScheduleEditorPage from './pages/ScheduleEditorPage';
 import ScheduleManagementPage from './pages/ScheduleManagementPage';
 import ScheduleViewPage from './pages/ScheduleViewPage';
+import UsersPage from './pages/UsersPage';
 
-const theme = createTheme({
-    palette: {
-        primary: {
-            main: '#1976d2',
+const buildTheme = (mode: ThemeMode) =>
+    createTheme({
+        palette: {
+            mode,
+            primary: { main: '#1976d2' },
+            secondary: { main: mode === 'dark' ? '#f06292' : '#dc004e' },
+            ...(mode === 'dark'
+                ? { background: { default: '#15171c', paper: '#1e2128' } }
+                : {}),
         },
-        secondary: {
-            main: '#dc004e',
-        },
-    },
-});
+    });
 
 // Компонент для защищённых роутов
 const PrivateRoute: React.FC<{ children: React.ReactElement }> = ({
@@ -149,6 +154,17 @@ const AppContent: React.FC = () => {
                         </PrivateRoute>
                     }
                 />
+                {/* Режим «Сегодня» (фокус) */}
+                <Route
+                    path="/today"
+                    element={
+                        <PrivateRoute>
+                            <CategoryCheckWrapper>
+                                <TodayPage />
+                            </CategoryCheckWrapper>
+                        </PrivateRoute>
+                    }
+                />
                 <Route
                     path="/events"
                     element={
@@ -159,14 +175,15 @@ const AppContent: React.FC = () => {
                         </PrivateRoute>
                     }
                 />
+                {/* Статистика — только для админов (раньше маршрут был доступен всем по прямой ссылке) */}
                 <Route
                     path="/statistics"
                     element={
-                        <PrivateRoute>
+                        <AdminRoute>
                             <CategoryCheckWrapper>
                                 <StatisticsDashboard />
                             </CategoryCheckWrapper>
-                        </PrivateRoute>
+                        </AdminRoute>
                     }
                 />
                 <Route
@@ -222,6 +239,16 @@ const AppContent: React.FC = () => {
                     }
                 />
                 <Route
+                    path="/users"
+                    element={
+                        <AdminRoute>
+                            <CategoryCheckWrapper>
+                                <UsersPage />
+                            </CategoryCheckWrapper>
+                        </AdminRoute>
+                    }
+                />
+                <Route
                     path="/schedule/editor/:versionId"
                     element={
                         <AdminRoute>
@@ -249,12 +276,29 @@ const AppContent: React.FC = () => {
 };
 
 const App: React.FC = () => {
+    const [mode, setMode] = useState<ThemeMode>(() => {
+        try { return (localStorage.getItem('plantakt_theme') as ThemeMode) || 'light'; } catch { return 'light'; }
+    });
+    const theme = useMemo(() => buildTheme(mode), [mode]);
+    const colorMode = useMemo(() => ({
+        mode,
+        toggle: () => setMode((m) => {
+            const next: ThemeMode = m === 'light' ? 'dark' : 'light';
+            try { localStorage.setItem('plantakt_theme', next); } catch { /* ignore */ }
+            return next;
+        }),
+    }), [mode]);
+
     return (
         <Provider store={store}>
-            <ThemeProvider theme={theme}>
-                <CssBaseline />
-                <AppContent />
-            </ThemeProvider>
+            <ColorModeContext.Provider value={colorMode}>
+                <ThemeProvider theme={theme}>
+                    <CssBaseline />
+                    <CelebrationProvider>
+                        <AppContent />
+                    </CelebrationProvider>
+                </ThemeProvider>
+            </ColorModeContext.Provider>
         </Provider>
     );
 };

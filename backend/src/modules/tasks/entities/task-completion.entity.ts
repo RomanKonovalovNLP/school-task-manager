@@ -26,7 +26,7 @@ export class TaskCompletion {
     @Column({ name: 'user_profile_id' })
     userProfileId: number;
 
-    @CreateDateColumn({ name: 'completed_at' })
+    @CreateDateColumn({ name: 'completed_at', type: 'timestamptz' })
     completedAt: Date;
 
     // Relations

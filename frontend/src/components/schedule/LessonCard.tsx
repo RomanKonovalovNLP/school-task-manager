@@ -114,7 +114,9 @@ const LessonCard: React.FC<LessonCardProps> = ({
                 >
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                         <DragIndicator fontSize="small" sx={{ opacity: 0.5 }} />
-                        
+                        {(schoolClass as any)?.shift === 2 && (
+                            <Box component="span" title="2 смена" sx={{ fontSize: '0.55rem', fontWeight: 700, bgcolor: '#8e24aa', color: '#fff', borderRadius: '4px', px: 0.4, lineHeight: 1.5, flexShrink: 0 }}>2см</Box>
+                        )}
                         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
                             <Typography
                                 variant="caption"

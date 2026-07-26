@@ -26,7 +26,7 @@ export class UserCategory {
     @Column({ name: 'category_id' })
     categoryId: number;
 
-    @CreateDateColumn({ name: 'created_at' })
+    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
     createdAt: Date;
 
     // Relations

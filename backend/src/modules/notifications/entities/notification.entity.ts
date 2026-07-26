@@ -5,12 +5,14 @@ import {
     CreateDateColumn,
     ManyToOne,
     JoinColumn,
+    Index,
 } from 'typeorm';
 import { School } from '../../schools/entities/school.entity';
 import { Task } from '../../tasks/entities/task.entity';
 import { Event } from '../../events/entities/event.entity';
 
 @Entity('notifications')
+@Index(['schoolId', 'recipientCategory', 'isRead'])
 export class Notification {
     @PrimaryGeneratedColumn()
     id: number;
@@ -20,6 +22,10 @@ export class Notification {
 
     @Column({ name: 'recipient_category', length: 100, nullable: true })
     recipientCategory: string;
+
+    // Адресат — конкретный пользователь (ФИО), альтернатива категории
+    @Column({ name: 'recipient_user', length: 255, nullable: true })
+    recipientUser: string;
 
     @Column({ name: 'task_id', nullable: true })
     taskId: number | null;

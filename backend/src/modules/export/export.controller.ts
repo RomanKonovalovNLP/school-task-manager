@@ -3,10 +3,13 @@ import type { Response } from 'express';
 import { ExportService } from './export.service';
 import { StatisticsService } from '../statistics/statistics.service';
 import { SchoolAuthGuard } from '../../common/guards/school-auth.guard';
+import { AdminGuard } from '../../common/guards/admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
+// Выгрузки содержат ВСЕ задачи школы (включая чужие личные и categoryOnly),
+// поэтому доступны только администраторам
 @Controller('export')
-@UseGuards(SchoolAuthGuard)
+@UseGuards(SchoolAuthGuard, AdminGuard)
 export class ExportController {
     constructor(
         private readonly exportService: ExportService,

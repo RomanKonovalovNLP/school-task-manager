@@ -28,6 +28,6 @@ export class Admin {
     @Column({ type: 'varchar', length: 255, name: 'password_hash' })
     passwordHash: string;
 
-    @CreateDateColumn({ name: 'created_at' })
+    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
     createdAt: Date;
 }

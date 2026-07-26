@@ -19,6 +19,10 @@ export class EventAssignee {
     @JoinColumn({ name: 'event_id' })
     event: Event;
 
-    @Column({ name: 'assignee_category', length: 100 })
+    @Column({ name: 'assignee_category', length: 100, nullable: true })
     assigneeCategory: string;
+
+    // Персональный ответственный (ФИО), альтернатива категории
+    @Column({ name: 'assignee_user', length: 255, nullable: true })
+    assigneeUser: string;
 }

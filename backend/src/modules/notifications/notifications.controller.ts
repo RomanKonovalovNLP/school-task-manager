@@ -91,8 +91,8 @@ export class NotificationsController {
         const categories = await this.getUserCategories(user.schoolId, user.fullName);
 
         return this.notificationsService.getUnreadNotifications(
-            user.sessionId,
             user.schoolId,
+            user.fullName,
             categories,
         );
     }
@@ -107,8 +107,8 @@ export class NotificationsController {
 
         return {
             count: await this.notificationsService.getUnreadCount(
-                user.sessionId,
                 user.schoolId,
+                user.fullName,
                 categories,
             ),
         };
@@ -123,8 +123,8 @@ export class NotificationsController {
         const categories = await this.getUserCategories(user.schoolId, user.fullName);
 
         return this.notificationsService.markAllAsRead(
-            user.sessionId,
             user.schoolId,
+            user.fullName,
             categories,
         );
     }
@@ -141,6 +141,7 @@ export class NotificationsController {
 
         return this.notificationsService.deleteReadNotificationsForUser(
             user.schoolId,
+            user.fullName,
             categories,
         );
     }
@@ -159,8 +160,8 @@ export class NotificationsController {
         const categories = await this.getUserCategories(user.schoolId, user.fullName);
 
         return this.notificationsService.getAllNotifications(
-            user.sessionId,
             user.schoolId,
+            user.fullName,
             categories,
             limit || 100,
         );
@@ -183,7 +184,7 @@ export class NotificationsController {
         // Проверяем принадлежность
         await this.checkNotificationOwnership(notificationId, user.schoolId, categories);
 
-        return this.notificationsService.markAsRead(notificationId, user.sessionId, user.schoolId, categories);
+        return this.notificationsService.markAsRead(notificationId, user.schoolId, user.fullName, categories);
     }
 
     /**
@@ -201,6 +202,6 @@ export class NotificationsController {
         // Проверяем принадлежность
         await this.checkNotificationOwnership(notificationId, user.schoolId, categories);
 
-        return this.notificationsService.deleteNotification(notificationId, user.schoolId, categories);
+        return this.notificationsService.deleteNotification(notificationId, user.schoolId, user.fullName, categories);
     }
 }

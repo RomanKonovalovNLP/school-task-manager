@@ -25,6 +25,6 @@ export class TaskView {
     @Column({ type: 'varchar', length: 255, name: 'viewer_name' })
     viewerName: string;
 
-    @CreateDateColumn({ name: 'viewed_at' })
+    @CreateDateColumn({ name: 'viewed_at', type: 'timestamptz' })
     viewedAt: Date;
 }

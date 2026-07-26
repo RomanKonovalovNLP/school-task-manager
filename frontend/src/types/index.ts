@@ -14,6 +14,7 @@ export interface Task {
     // Relations
     assignees?: TaskAssignee[];
     assigneeCategories?: string[];
+    assigneeUsers?: string[];
     views?: TaskView[];
     attachments?: TaskAttachment[];  // НОВОЕ: Вложения для задач
     viewedByUser?: boolean;
@@ -23,6 +24,15 @@ export interface Task {
     // FIX #2: Личные задачи и видимость по категориям
     isPersonal?: boolean;       // Личная задача (видна только создателю)
     categoryOnly?: boolean;     // Видна только назначенным категориям + создателю + админам
+    restrictAttachments?: boolean; // Вложения обычных пользователей видны только создателю/админам
+    isImportant?: boolean;         // Ручной приоритет «важная»
+    recurrence?: string | null;    // Повторяемость серии
+
+    // Статусы выполнения (приходят с сервера вместе со списком задач)
+    isCompletedByUser?: boolean;   // Отметил текущий пользователь
+    isFullyCompleted?: boolean;    // Отметили все ожидаемые исполнители
+    completionCount?: number;      // Сколько человек отметили
+    expectedCount?: number;        // Сколько человек должны отметить
 }
 
 export interface TaskView {
@@ -47,34 +57,8 @@ export interface TaskAttachment {
     mimeType: string;
     fileSize: number;
     uploaderName: string;
+    uploaderIsPrivileged?: boolean; // Загружено создателем/админом (видно всем)
     uploadedAt: string;
-}
-
-export interface TaskPosition {
-    id: number;
-    taskId: number;
-    userSessionId: number;
-    positionX: number;
-    positionY: number;
-    zIndex: number;
-    groupId: number | null;
-    createdAt: string;
-    updatedAt: string;
-}
-
-export interface TaskGroup {
-    id: number;
-    userSessionId: number;
-    schoolId: number;
-    positionX: number;
-    positionY: number;
-    createdAt: string;
-    updatedAt: string;
-}
-
-export interface TaskPositionsResponse {
-    positions: TaskPosition[];
-    groups: TaskGroup[];
 }
 
 export interface Notification {
@@ -126,9 +110,14 @@ export interface CreateTaskDto {
     title: string;
     description?: string;
     deadline: string;
-    assigneeCategories: string[];
+    assigneeCategories?: string[];
+    assigneeUsers?: string[];
     isPersonal?: boolean;
     categoryOnly?: boolean;     // FIX #2
+    restrictAttachments?: boolean;
+    isImportant?: boolean;
+    recurrence?: string;
+    recurrenceUntil?: string;
 }
 
 export interface UpdateTaskDto {
@@ -136,6 +125,9 @@ export interface UpdateTaskDto {
     description?: string;
     deadline?: string;
     assigneeCategories?: string[];
+    assigneeUsers?: string[];
     isPersonal?: boolean;
     categoryOnly?: boolean;     // FIX #2
+    restrictAttachments?: boolean;
+    isImportant?: boolean;
 }

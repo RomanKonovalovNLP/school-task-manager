@@ -23,6 +23,7 @@ import EventCard from '../components/events/EventCard';
 import CreateEventModal from '../components/events/CreateEventModal';
 import EventDetailModal from '../components/events/EventDetailModal';
 import { eventsService, Event } from '../services/events.service';
+import { getEventEnd } from '../utils/eventHelpers';
 import { useAppDispatch, useAppSelector } from '../hooks/useRedux';
 import { setCategories } from '../store/slices/filtersSlice';
 import { filtersService } from '../services/filters.service';
@@ -124,27 +125,23 @@ const EventsPage: React.FC = () => {
         );
     });
 
+    const now = new Date();
+
     const sortedEvents = [...filteredEvents].sort((a, b) => {
-        const now = new Date();
-        const dateA = new Date(a.eventDate);
-        const dateB = new Date(b.eventDate);
-        const isPastA = dateA < now;
-        const isPastB = dateB < now;
+        const dateA = new Date(a.startDate || a.eventDate);
+        const dateB = new Date(b.startDate || b.eventDate);
+        // Прошедшие уводим вниз (учитываем «весь день» — см. getEventEnd)
+        const isPastA = getEventEnd(a) < now;
+        const isPastB = getEventEnd(b) < now;
 
         if (isPastA && !isPastB) return 1;
         if (!isPastA && isPastB) return -1;
         return dateA.getTime() - dateB.getTime();
     });
 
-    // F21: Для многодневных событий используем endDate (если есть) вместо eventDate
-    const getEventEndTime = (e: Event): Date => {
-        if (e.endDate) return new Date(e.endDate);
-        return new Date(e.startDate || e.eventDate);
-    };
-
-    const now = new Date();
-    const upcomingEvents = sortedEvents.filter((e) => getEventEndTime(e) >= now);
-    const pastEvents = sortedEvents.filter((e) => getEventEndTime(e) < now);
+    // F21: многодневные и «на весь день» считаются актуальными до конца последнего дня
+    const upcomingEvents = sortedEvents.filter((e) => getEventEnd(e) >= now);
+    const pastEvents = sortedEvents.filter((e) => getEventEnd(e) < now);
 
     if (loading) {
         return (

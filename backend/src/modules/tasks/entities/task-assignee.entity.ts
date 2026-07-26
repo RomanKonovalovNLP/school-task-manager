@@ -5,11 +5,13 @@ import {
     ManyToOne,
     JoinColumn,
     Unique,
+    Index,
 } from 'typeorm';
 import { Task } from './task.entity';
 
 @Entity('task_assignees')
 @Unique(['taskId', 'assigneeCategory'])
+@Index(['assigneeCategory'])
 export class TaskAssignee {
     @PrimaryGeneratedColumn()
     id: number;
@@ -21,6 +23,11 @@ export class TaskAssignee {
     @JoinColumn({ name: 'task_id' })
     task: Task;
 
-    @Column({ type: 'varchar', length: 100, name: 'assignee_category' })
+    // Назначение на категорию (одна из assignee_category / assignee_user заполнена)
+    @Column({ type: 'varchar', length: 100, name: 'assignee_category', nullable: true })
     assigneeCategory: string;
+
+    // Назначение на конкретного пользователя (ФИО)
+    @Column({ type: 'varchar', length: 255, name: 'assignee_user', nullable: true })
+    assigneeUser: string;
 }

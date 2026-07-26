@@ -23,7 +23,14 @@ export class CreateTaskDto {
 
     @IsArray({ message: 'assigneeCategories должен быть массивом' })
     @IsString({ each: true, message: 'Каждая категория должна быть строкой' })
-    assigneeCategories: string[];
+    @IsOptional()
+    assigneeCategories?: string[];
+
+    // Назначение на конкретных пользователей (ФИО)
+    @IsArray()
+    @IsString({ each: true })
+    @IsOptional()
+    assigneeUsers?: string[];
 
     // FIX #2: Личная задача
     @IsBoolean()
@@ -34,4 +41,24 @@ export class CreateTaskDto {
     @IsBoolean()
     @IsOptional()
     categoryOnly?: boolean;
+
+    // Ограничить видимость вложений от обычных пользователей
+    @IsBoolean()
+    @IsOptional()
+    restrictAttachments?: boolean;
+
+    // Ручной приоритет
+    @IsBoolean()
+    @IsOptional()
+    isImportant?: boolean;
+
+    // Повторение: none | daily | weekly | monthly
+    @IsString()
+    @IsOptional()
+    recurrence?: string;
+
+    // Повторять до этой даты (включительно)
+    @IsDateString()
+    @IsOptional()
+    recurrenceUntil?: string;
 }

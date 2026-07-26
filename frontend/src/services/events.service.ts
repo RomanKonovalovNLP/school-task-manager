@@ -49,6 +49,8 @@ export interface Event {
     schoolId: number;
     title: string;
     description?: string;
+    location?: string;
+    recurrence?: string | null;
 
     // Дата/время начала и окончания
     startDate: string;
@@ -63,6 +65,7 @@ export interface Event {
     createdAt: string;
     updatedAt: string;
     assigneeCategories: string[];
+    assigneeUsers?: string[];
     attachments?: EventAttachment[];
     tasks?: EventTask[];
     agendaItems?: AgendaItem[];
@@ -74,18 +77,23 @@ export interface Event {
 export interface CreateEventDto {
     title: string;
     description?: string;
+    location?: string;
+    recurrence?: string;
+    recurrenceUntil?: string;
 
     // Даты начала и окончания
     startDate: string;
     endDate?: string;
     allDay?: boolean;
 
-    assigneeCategories: string[];
+    assigneeCategories?: string[];
+    assigneeUsers?: string[];
 }
 
 export interface UpdateEventDto {
     title?: string;
     description?: string;
+    location?: string;
 
     // Даты
     startDate?: string;
@@ -93,6 +101,7 @@ export interface UpdateEventDto {
     allDay?: boolean;
 
     assigneeCategories?: string[];
+    assigneeUsers?: string[];
 }
 
 export interface CreateEventTaskDto {
@@ -127,7 +136,10 @@ export const eventsService = {
     },
 
     async getByDate(date: string): Promise<Event[]> {
-        const response = await api.get<Event[]>(`/events/date/${date}`);
+        // Передаём часовой пояс клиента, чтобы день считался в поясе пользователя,
+        // а не сервера (иначе мероприятия «на весь день» могут выпадать из выборки)
+        const tz = new Date().getTimezoneOffset();
+        const response = await api.get<Event[]>(`/events/date/${date}?tz=${tz}`);
         return response.data;
     },
 

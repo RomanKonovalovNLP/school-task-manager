@@ -212,6 +212,10 @@ export class CreateWorkloadDto {
     @IsOptional()
     difficulty?: number;
 
+    @IsBoolean()
+    @IsOptional()
+    allowDoubleLessons?: boolean;
+
     @IsArray()
     @IsOptional()
     additionalClassIds?: number[];
@@ -246,6 +250,10 @@ export class UpdateWorkloadDto {
     @IsOptional()
     weekType?: WorkloadWeekType;
 
+    @IsBoolean()
+    @IsOptional()
+    allowDoubleLessons?: boolean;
+
     @IsString()
     @IsOptional()
     notes?: string;
@@ -271,6 +279,18 @@ export class CreateSubstitutionDto {
     @IsNumber()
     @IsOptional()
     newSubjectId?: number;
+
+    @IsNumber()
+    @IsOptional()
+    newDayOfWeek?: number;
+
+    @IsNumber()
+    @IsOptional()
+    newLessonNumber?: number;
+
+    @IsString()
+    @IsOptional()
+    newWeekType?: string;
 
     @IsBoolean()
     @IsOptional()

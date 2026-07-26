@@ -1,3 +1,4 @@
+import { useCelebration } from '../celebration/CelebrationProvider';
 import React, { useState, useEffect } from 'react';
 import {
     Dialog,
@@ -13,6 +14,7 @@ import {
     Select,
     MenuItem,
     OutlinedInput,
+    Autocomplete,
     SelectChangeEvent,
     CircularProgress,
     Alert,
@@ -21,7 +23,9 @@ import {
     Typography,
     Divider,
 } from '@mui/material';
+import { Person } from '@mui/icons-material';
 import { useAppSelector } from '../../hooks/useRedux';
+import { authService } from '../../services/auth.service';
 import { eventsService, Event, CreateEventDto } from '../../services/events.service';
 
 interface CreateEventModalProps {
@@ -39,8 +43,12 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
 }) => {
     const { categories } = useAppSelector((state) => state.filters);
 
+    const celebrate = useCelebration();
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
+    const [location, setLocation] = useState('');
+    const [recurrence, setRecurrence] = useState('none');
+    const [recurrenceUntil, setRecurrenceUntil] = useState('');
     
     // ✅ НОВОЕ: Раздельные поля для начала и окончания
     const [startDate, setStartDate] = useState('');
@@ -51,14 +59,43 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
     const [hasEndDate, setHasEndDate] = useState(false);
     
     const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+    const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+    const [allUsers, setAllUsers] = useState<{ id: number; fullName: string }[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+
+    useEffect(() => {
+        if (!open) return;
+        // Справочник сотрудников доступен всем пользователям (не только админам),
+        // чтобы любой мог назначить задачу конкретному человеку
+        authService.getUsersDirectory()
+            .then((list) => setAllUsers(list || []))
+            .catch(() => setAllUsers([]));
+    }, [open]);
+
+    // Единый список ответственных: сначала категории, затем персонально люди (с поиском)
+    type Target = { type: 'category' | 'user'; value: string; label: string };
+    const targetOptions: Target[] = React.useMemo(() => [
+        ...categories.map((c) => ({ type: 'category' as const, value: c.categoryName, label: c.categoryName })),
+        ...allUsers.map((u) => ({ type: 'user' as const, value: u.fullName, label: u.fullName })),
+    ], [categories, allUsers]);
+    const selectedTargets: Target[] = React.useMemo(() => [
+        ...selectedCategories.map((v) => ({ type: 'category' as const, value: v, label: v })),
+        ...selectedUsers.map((v) => ({ type: 'user' as const, value: v, label: v })),
+    ], [selectedCategories, selectedUsers]);
+    const handleTargetsChange = (_e: any, val: Target[]) => {
+        setSelectedCategories(val.filter((o) => o.type === 'category').map((o) => o.value));
+        setSelectedUsers(val.filter((o) => o.type === 'user').map((o) => o.value));
+    };
 
     useEffect(() => {
         if (open) {
             if (editEvent) {
                 setTitle(editEvent.title);
                 setDescription(editEvent.description || '');
+                setLocation(editEvent.location || '');
+                setRecurrence('none');
+                setRecurrenceUntil('');
                 
                 // Парсим даты
                 const start = new Date(editEvent.startDate || editEvent.eventDate);
@@ -78,6 +115,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
                 }
                 
                 setSelectedCategories(editEvent.assigneeCategories || []);
+                setSelectedUsers(editEvent.assigneeUsers || []);
             } else {
                 resetForm();
             }
@@ -87,13 +125,16 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
     const resetForm = () => {
         setTitle('');
         setDescription('');
+        setLocation('');
+        setRecurrence('none');
+        setRecurrenceUntil('');
         setStartDate('');
         setStartTime('');
         setEndDate('');
         setEndTime('');
         setAllDay(false);
         setHasEndDate(false);
-        setSelectedCategories([]);
+        setSelectedCategories([]); setSelectedUsers([]);
         setError('');
     };
 
@@ -156,7 +197,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
             return;
         }
 
-        if (selectedCategories.length === 0) {
+        if (selectedCategories.length === 0 && selectedUsers.length === 0) {
             setError('Выберите хотя бы одну категорию');
             return;
         }
@@ -188,10 +229,14 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
             const eventData: CreateEventDto = {
                 title: title.trim(),
                 description: description.trim() || undefined,
+                location: location.trim() || undefined,
+                recurrence: !editEvent && recurrence !== 'none' ? recurrence : undefined,
+                recurrenceUntil: !editEvent && recurrence !== 'none' && recurrenceUntil ? recurrenceUntil : undefined,
                 startDate: new Date(startDateTime).toISOString(),
                 endDate: endDateTime ? new Date(endDateTime).toISOString() : undefined,
                 allDay,
                 assigneeCategories: selectedCategories,
+                assigneeUsers: selectedUsers,
             };
 
             if (editEvent) {
@@ -202,6 +247,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
 
             onSuccess();
             handleClose();
+            celebrate({ variant: 'event', message: 'Мероприятие успешно создано!' });
         } catch (err: any) {
             setError(err.response?.data?.message || 'Ошибка при сохранении мероприятия');
         } finally {
@@ -247,6 +293,32 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
                             rows={3}
                             fullWidth
                         />
+
+                        <TextField
+                            label="Место проведения"
+                            value={location}
+                            onChange={(e) => setLocation(e.target.value)}
+                            fullWidth
+                            placeholder="Например: Актовый зал, каб. 205"
+                        />
+
+                        {!editEvent && (
+                            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+                                <FormControl size="small" sx={{ minWidth: 190 }}>
+                                    <InputLabel>Повторять</InputLabel>
+                                    <Select value={recurrence} label="Повторять" onChange={(e) => setRecurrence(e.target.value)}>
+                                        <MenuItem value="none">Не повторять</MenuItem>
+                                        <MenuItem value="daily">Ежедневно</MenuItem>
+                                        <MenuItem value="weekly">Еженедельно</MenuItem>
+                                        <MenuItem value="monthly">Ежемесячно</MenuItem>
+                                    </Select>
+                                </FormControl>
+                                {recurrence !== 'none' && (
+                                    <TextField size="small" type="date" label="Повторять до" InputLabelProps={{ shrink: true }}
+                                        value={recurrenceUntil} onChange={(e) => setRecurrenceUntil(e.target.value)} />
+                                )}
+                            </Box>
+                        )}
 
                         <Divider />
                         
@@ -334,28 +406,36 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
 
                         <Divider />
 
-                        <FormControl fullWidth required>
-                            <InputLabel>Для кого / Участники</InputLabel>
-                            <Select
-                                multiple
-                                value={selectedCategories}
-                                onChange={handleCategoryChange}
-                                input={<OutlinedInput label="Для кого / Участники" />}
-                                renderValue={(selected) => (
-                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                                        {selected.map((value) => (
-                                            <Chip key={value} label={value} size="small" />
-                                        ))}
-                                    </Box>
-                                )}
-                            >
-                                {categories.map((cat) => (
-                                    <MenuItem key={cat.id} value={cat.categoryName}>
-                                        {cat.categoryName}
-                                    </MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
+                        <Autocomplete
+                            multiple
+                            disableCloseOnSelect
+                            options={targetOptions}
+                            value={selectedTargets}
+                            onChange={handleTargetsChange}
+                            groupBy={(o) => (o.type === 'category' ? 'Категории' : 'Персонально')}
+                            getOptionLabel={(o) => o.label}
+                            isOptionEqualToValue={(o, v) => o.type === v.type && o.value === v.value}
+                            noOptionsText="Ничего не найдено"
+                            openOnFocus
+                            ListboxProps={{ style: { maxHeight: 240 } }}
+                            componentsProps={{ popper: { placement: 'bottom-start', modifiers: [{ name: 'flip', enabled: false }, { name: 'preventOverflow', enabled: true, options: { altAxis: true, padding: 8 } }] } }}
+                            renderTags={(value, getTagProps) =>
+                                value.map((o, index) => (
+                                    <Chip
+                                        {...getTagProps({ index })}
+                                        key={`${o.type}-${o.value}`}
+                                        size="small"
+                                        label={o.label}
+                                        color={o.type === 'user' ? 'secondary' : 'default'}
+                                        icon={o.type === 'user' ? <Person sx={{ fontSize: '0.9rem' }} /> : undefined}
+                                    />
+                                ))
+                            }
+                            renderInput={(params) => (
+                                <TextField {...params} label="Ответственные / участники" placeholder="Поиск категории или человека…" required={selectedTargets.length === 0} />
+                            )}
+                            fullWidth
+                        />
                     </Box>
                 </DialogContent>
                 <DialogActions>

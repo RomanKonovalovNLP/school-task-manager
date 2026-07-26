@@ -36,6 +36,11 @@ export class TaskAttachment {
     @Column({ type: 'varchar', length: 255, name: 'uploader_name' })
     uploaderName: string;
 
-    @CreateDateColumn({ name: 'uploaded_at' })
+    // true, если файл загружен создателем задачи или администратором.
+    // Такие файлы (шаблоны) видны всем, даже при включённом restrictAttachments.
+    @Column({ name: 'uploader_is_privileged', type: 'boolean', default: false })
+    uploaderIsPrivileged: boolean;
+
+    @CreateDateColumn({ name: 'uploaded_at', type: 'timestamptz' })
     uploadedAt: Date;
 }

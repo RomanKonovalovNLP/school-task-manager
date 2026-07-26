@@ -13,6 +13,7 @@ import {
     HttpStatus,
 } from '@nestjs/common';
 import { SchoolAuthGuard } from '../../../common/guards/school-auth.guard';
+import { AdminGuard } from '../../../common/guards/admin.guard';
 import { TeachersService } from '../services/teachers.service';
 import { CreateTeacherDto } from '../dto/schedule.dto';
 
@@ -32,11 +33,13 @@ export class TeachersController {
         return this.teachersService.findOne(id, req.user.schoolId);
     }
 
+    @UseGuards(AdminGuard)
     @Post()
     async create(@Body() dto: CreateTeacherDto, @Request() req) {
         return this.teachersService.create(dto, req.user.schoolId);
     }
 
+    @UseGuards(AdminGuard)
     @Put(':id')
     async update(
         @Param('id', ParseIntPipe) id: number,
@@ -46,6 +49,7 @@ export class TeachersController {
         return this.teachersService.update(id, dto, req.user.schoolId);
     }
 
+    @UseGuards(AdminGuard)
     @Delete(':id')
     @HttpCode(HttpStatus.NO_CONTENT)
     async remove(@Param('id', ParseIntPipe) id: number, @Request() req) {
@@ -53,10 +57,11 @@ export class TeachersController {
     }
 
     @Get(':id/availability')
-    async getAvailability(@Param('id', ParseIntPipe) id: number) {
-        return this.teachersService.getAvailability(id);
+    async getAvailability(@Param('id', ParseIntPipe) id: number, @Request() req) {
+        return this.teachersService.getAvailability(id, req.user.schoolId);
     }
 
+    @UseGuards(AdminGuard)
     @Post(':id/availability')
     async setAvailability(
         @Param('id', ParseIntPipe) id: number,

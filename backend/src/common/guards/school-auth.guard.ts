@@ -38,9 +38,15 @@ export class SchoolAuthGuard implements CanActivate {
             throw new UnauthorizedException('Недействительный токен');
         }
 
-        // Обновить время последней активности
-        session.lastActive = new Date();
-        await this.sessionRepository.save(session);
+        // Обновляем время последней активности не чаще раза в 5 минут.
+        // ИСПРАВЛЕНО: раньше запись в БД выполнялась на КАЖДЫЙ запрос —
+        // лишняя нагрузка при опросе уведомлений и частых обновлениях списков.
+        const FIVE_MINUTES = 5 * 60 * 1000;
+        const lastActive = session.lastActive ? new Date(session.lastActive).getTime() : 0;
+        if (Date.now() - lastActive > FIVE_MINUTES) {
+            session.lastActive = new Date();
+            await this.sessionRepository.save(session);
+        }
 
         // Прикрепить пользователя к запросу
         request.user = {

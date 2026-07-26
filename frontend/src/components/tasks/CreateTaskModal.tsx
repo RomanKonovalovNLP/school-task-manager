@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import { useCelebration } from '../celebration/CelebrationProvider';
+import React, { useState, useEffect } from 'react';
 import {
     Dialog,
     DialogTitle,
@@ -13,6 +14,7 @@ import {
     Select,
     MenuItem,
     OutlinedInput,
+    Autocomplete,
     SelectChangeEvent,
     CircularProgress,
     FormControlLabel,
@@ -23,6 +25,8 @@ import {
 import { useAppDispatch, useAppSelector } from '../../hooks/useRedux';
 import { addTask } from '../../store/slices/tasksSlice';
 import { tasksService } from '../../services/tasks.service';
+import { Person } from '@mui/icons-material';
+import { authService } from '../../services/auth.service';
 import { CreateTaskDto } from '../../types';
 
 interface CreateTaskModalProps {
@@ -38,22 +42,54 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
 }) => {
     const { categories } = useAppSelector((state) => state.filters);
     const dispatch = useAppDispatch();
+    const celebrate = useCelebration();
 
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [deadlineDate, setDeadlineDate] = useState('');
     const [deadlineTime, setDeadlineTime] = useState('');
     const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+    const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+    const [allUsers, setAllUsers] = useState<{ id: number; fullName: string }[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+
+    useEffect(() => {
+        if (!open) return;
+        // Справочник сотрудников доступен всем пользователям (не только админам),
+        // чтобы любой мог назначить задачу конкретному человеку
+        authService.getUsersDirectory()
+            .then((list) => setAllUsers(list || []))
+            .catch(() => setAllUsers([]));
+    }, [open]);
 
     // FIX #2: Личная задача и видимость по категориям
     const [isPersonal, setIsPersonal] = useState(false);
     const [categoryOnly, setCategoryOnly] = useState(false);
+    // Ограничение видимости вложений от обычных пользователей
+    const [restrictAttachments, setRestrictAttachments] = useState(false);
+    const [isImportant, setIsImportant] = useState(false);
+    const [recurrence, setRecurrence] = useState('none');
+    const [recurrenceUntil, setRecurrenceUntil] = useState('');
 
     const handleCategoryChange = (event: SelectChangeEvent<string[]>) => {
         const value = event.target.value;
         setSelectedCategories(typeof value === 'string' ? value.split(',') : value);
+    };
+
+    // Единый список «Для кого»: сначала категории, затем персонально люди (с поиском)
+    type Target = { type: 'category' | 'user'; value: string; label: string };
+    const targetOptions: Target[] = React.useMemo(() => [
+        ...categories.map((c) => ({ type: 'category' as const, value: c.categoryName, label: c.categoryName })),
+        ...allUsers.map((u) => ({ type: 'user' as const, value: u.fullName, label: u.fullName })),
+    ], [categories, allUsers]);
+    const selectedTargets: Target[] = React.useMemo(() => [
+        ...selectedCategories.map((v) => ({ type: 'category' as const, value: v, label: v })),
+        ...selectedUsers.map((v) => ({ type: 'user' as const, value: v, label: v })),
+    ], [selectedCategories, selectedUsers]);
+    const handleTargetsChange = (_e: any, val: Target[]) => {
+        setSelectedCategories(val.filter((o) => o.type === 'category').map((o) => o.value));
+        setSelectedUsers(val.filter((o) => o.type === 'user').map((o) => o.value));
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -70,9 +106,9 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
             return;
         }
 
-        // Для неличных задач нужны категории
-        if (!isPersonal && selectedCategories.length === 0) {
-            setError('Выберите хотя бы одну категорию');
+        // Для неличных задач нужны получатели: категории или конкретные люди
+        if (!isPersonal && selectedCategories.length === 0 && selectedUsers.length === 0) {
+            setError('Выберите хотя бы одну категорию или человека');
             return;
         }
 
@@ -87,14 +123,20 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                 description: description.trim(),
                 deadline: new Date(deadlineString).toISOString(),
                 assigneeCategories: isPersonal ? [] : selectedCategories,
+                assigneeUsers: isPersonal ? [] : selectedUsers,
                 isPersonal,
                 categoryOnly: isPersonal ? false : categoryOnly,
+                restrictAttachments: isPersonal ? false : restrictAttachments,
+                isImportant,
+                recurrence: recurrence !== 'none' ? recurrence : undefined,
+                recurrenceUntil: recurrence !== 'none' && recurrenceUntil ? recurrenceUntil : undefined,
             };
 
             const newTask = await tasksService.create(taskData);
             dispatch(addTask(newTask));
             onSuccess();
             handleClose();
+            celebrate({ variant: 'task', message: 'Задача успешно создана!' });
         } catch (err: any) {
             const msg = err.response?.data?.message;
             setError(
@@ -110,9 +152,13 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
         setDescription('');
         setDeadlineDate('');
         setDeadlineTime('');
-        setSelectedCategories([]);
+        setSelectedCategories([]); setSelectedUsers([]);
         setIsPersonal(false);
         setCategoryOnly(false);
+        setRestrictAttachments(false);
+        setIsImportant(false);
+        setRecurrence('none');
+        setRecurrenceUntil('');
         setError('');
         onClose();
     };
@@ -184,7 +230,7 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                                         setIsPersonal(e.target.checked);
                                         if (e.target.checked) {
                                             setCategoryOnly(false);
-                                            setSelectedCategories([]);
+                                            setSelectedCategories([]); setSelectedUsers([]);
                                         }
                                     }}
                                 />
@@ -199,31 +245,87 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                             }
                         />
 
+                        {/* Ручной приоритет */}
+                        <FormControlLabel
+                            control={<Checkbox checked={isImportant} onChange={(e) => setIsImportant(e.target.checked)} />}
+                            label={
+                                <Box>
+                                    <Typography variant="body2">Важная</Typography>
+                                    <Typography variant="caption" color="text.secondary">Высокий приоритет независимо от срока</Typography>
+                                </Box>
+                            }
+                        />
+
+                        {/* Повторение */}
+                        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+                            <FormControl size="small" sx={{ minWidth: 190 }}>
+                                <InputLabel>Повторять</InputLabel>
+                                <Select value={recurrence} label="Повторять" onChange={(e) => setRecurrence(e.target.value)}>
+                                    <MenuItem value="none">Не повторять</MenuItem>
+                                    <MenuItem value="daily">Ежедневно</MenuItem>
+                                    <MenuItem value="weekly">Еженедельно</MenuItem>
+                                    <MenuItem value="monthly">Ежемесячно</MenuItem>
+                                </Select>
+                            </FormControl>
+                            {recurrence !== 'none' && (
+                                <TextField size="small" type="date" label="Повторять до" InputLabelProps={{ shrink: true }}
+                                    value={recurrenceUntil} onChange={(e) => setRecurrenceUntil(e.target.value)} />
+                            )}
+                        </Box>
+                        {recurrence !== 'none' && !recurrenceUntil && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: -1 }}>
+                                Если не указать дату, задачи будут созданы до конца учебного года (31 мая).
+                            </Typography>
+                        )}
+
                         {/* Категории — скрыты для личных задач */}
                         {!isPersonal && (
                             <>
-                                <FormControl fullWidth required={!isPersonal}>
-                                    <InputLabel>Для кого</InputLabel>
-                                    <Select
-                                        multiple
-                                        value={selectedCategories}
-                                        onChange={handleCategoryChange}
-                                        input={<OutlinedInput label="Для кого" />}
-                                        renderValue={(selected) => (
-                                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                                                {selected.map((value) => (
-                                                    <Chip key={value} label={value} size="small" />
-                                                ))}
-                                            </Box>
-                                        )}
-                                    >
-                                        {categories.map((cat) => (
-                                            <MenuItem key={cat.id} value={cat.categoryName}>
-                                                {cat.categoryName}
-                                            </MenuItem>
-                                        ))}
-                                    </Select>
-                                </FormControl>
+                                <Autocomplete
+                                    multiple
+                                    disableCloseOnSelect
+                                    options={targetOptions}
+                                    value={selectedTargets}
+                                    onChange={handleTargetsChange}
+                                    groupBy={(o) => (o.type === 'category' ? 'Категории' : 'Персонально')}
+                                    getOptionLabel={(o) => o.label}
+                                    isOptionEqualToValue={(o, v) => o.type === v.type && o.value === v.value}
+                                    noOptionsText="Ничего не найдено"
+                                    openOnFocus
+                                    ListboxProps={{ style: { maxHeight: 240 } }}
+                                    componentsProps={{
+                                        popper: {
+                                            placement: 'bottom-start',
+                                            modifiers: [
+                                                // не переворачиваем вверх, но держим список в пределах экрана,
+                                                // чтобы был виден целиком до конца
+                                                { name: 'flip', enabled: false },
+                                                { name: 'preventOverflow', enabled: true, options: { altAxis: true, padding: 8 } },
+                                            ],
+                                        },
+                                    }}
+                                    renderTags={(value, getTagProps) =>
+                                        value.map((o, index) => (
+                                            <Chip
+                                                {...getTagProps({ index })}
+                                                key={`${o.type}-${o.value}`}
+                                                size="small"
+                                                label={o.label}
+                                                color={o.type === 'user' ? 'secondary' : 'default'}
+                                                icon={o.type === 'user' ? <Person sx={{ fontSize: '0.9rem' }} /> : undefined}
+                                            />
+                                        ))
+                                    }
+                                    renderInput={(params) => (
+                                        <TextField
+                                            {...params}
+                                            label="Для кого"
+                                            placeholder="Поиск категории или человека…"
+                                            required={!isPersonal && selectedTargets.length === 0}
+                                        />
+                                    )}
+                                    fullWidth
+                                />
 
                                 {/* FIX #2: Видимость только для назначенных */}
                                 <FormControlLabel
@@ -235,9 +337,30 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                                     }
                                     label={
                                         <Box>
-                                            <Typography variant="body2">Только для выбранных категорий</Typography>
+                                            <Typography variant="body2">Видна только назначенным (категориям и людям)</Typography>
                                             <Typography variant="caption" color="text.secondary">
                                                 Задачу увидят только назначенные, создатель и администраторы
+                                            </Typography>
+                                        </Box>
+                                    }
+                                />
+
+                                {/* Ограничение видимости вложений */}
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            checked={restrictAttachments}
+                                            onChange={(e) => setRestrictAttachments(e.target.checked)}
+                                        />
+                                    }
+                                    label={
+                                        <Box>
+                                            <Typography variant="body2">
+                                                Скрыть вложения пользователей от других
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary">
+                                                Файлы, прикреплённые пользователями, увидят только создатель
+                                                задачи и администраторы. Файлы, прикреплённые вами, видны всем.
                                             </Typography>
                                         </Box>
                                     }

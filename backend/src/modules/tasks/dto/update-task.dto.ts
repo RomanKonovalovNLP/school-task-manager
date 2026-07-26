@@ -26,6 +26,11 @@ export class UpdateTaskDto {
     @IsString({ each: true })
     assigneeCategories?: string[];
 
+    @IsArray()
+    @IsOptional()
+    @IsString({ each: true })
+    assigneeUsers?: string[];
+
     // FIX #2: Личная задача
     @IsBoolean()
     @IsOptional()
@@ -35,4 +40,13 @@ export class UpdateTaskDto {
     @IsBoolean()
     @IsOptional()
     categoryOnly?: boolean;
+
+    // Ограничить видимость вложений от обычных пользователей
+    @IsBoolean()
+    @IsOptional()
+    restrictAttachments?: boolean;
+
+    @IsBoolean()
+    @IsOptional()
+    isImportant?: boolean;
 }

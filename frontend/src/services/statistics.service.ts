@@ -71,6 +71,8 @@ export interface TaskCompletionStats {
     priority: string;
     categories: string[];
     completionCount: number;
+    expectedCount: number;
+    isFullyCompleted: boolean;
     completedBy: Array<{
         fullName: string;
         completedAt: string;
@@ -90,7 +92,34 @@ export interface TasksCompletionResponse {
         totalTasks: number;
         tasksWithCompletions: number;
         tasksWithoutCompletions: number;
+        fullyCompletedTasks: number;
         avgCompletionsPerTask: number;
+    };
+}
+
+// Статистика по неделям (для админов)
+export interface WeekStats {
+    weekStart: string;
+    weekEnd: string;
+    label: string;
+    isCurrent: boolean;
+    createdTasks: number;
+    deadlines: number;
+    completions: number;
+    onTimeCompletions: number;
+    lateCompletions: number;
+    onTimeRate: number;
+    activeUsers: number;
+}
+
+export interface WeeklyStatisticsResponse {
+    weeks: WeekStats[];
+    summary: {
+        lastWeekCompletions: number;
+        prevWeekCompletions: number;
+        deltaCompletions: number;
+        lastWeekOnTimeRate: number;
+        bestWeekLabel: string | null;
     };
 }
 
@@ -127,6 +156,12 @@ export const statisticsService = {
     // НОВОЕ: Детальная статистика по задачам (только для админов)
     async getTasksCompletionStatistics(): Promise<TasksCompletionResponse> {
         const response = await api.get<TasksCompletionResponse>('/statistics/tasks-completion');
+        return response.data;
+    },
+
+    // Статистика по неделям (только для админов)
+    async getWeeklyStatistics(weeks: number = 8): Promise<WeeklyStatisticsResponse> {
+        const response = await api.get<WeeklyStatisticsResponse>(`/statistics/weekly?weeks=${weeks}`);
         return response.data;
     },
 };

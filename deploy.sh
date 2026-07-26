@@ -1,100 +1,125 @@
 #!/bin/bash
-set -e
+#
+# ПланТакт: развёртывание и обновление на сервере.
+#
+#   bash deploy.sh          — обновить код и перезапустить
+#   bash deploy.sh --build  — то же, но с полной пересборкой образов
+#
+# Перед выкаткой скрипт ДЕЛАЕТ БЭКАП базы и вложений: если что-то пойдёт не так,
+# есть куда откатиться. Схема базы обновляется миграциями автоматически
+# (приложение применяет их при старте, подробности в DEPLOY.md).
 
-echo "=== ПланТакт: Деплой на сервер ==="
+set -euo pipefail
 
-# 1. Установка Docker если нет
+APP_DIR="${APP_DIR:-/root/plantakt}"
+REPO_URL="https://github.com/RomanKonovalovNLP/school-task-manager.git"
+BRANCH="${BRANCH:-main}"
+
+echo "=== ПланТакт: деплой ==="
+
+# ---------- 1. Docker ----------
 if ! command -v docker &> /dev/null; then
-    echo ">>> Установка Docker..."
+    echo ">>> Устанавливаю Docker..."
     apt-get update && apt-get install -y curl
     curl -fsSL https://get.docker.com | sh
-    systemctl enable docker
-    systemctl start docker
+    systemctl enable docker && systemctl start docker
     mkdir -p /etc/docker
     echo '{"dns": ["8.8.8.8", "8.8.4.4"]}' > /etc/docker/daemon.json
     systemctl restart docker
 fi
 
-# 2. Создать swap 2GB чтобы сервер не зависал при сборке
-if [ ! -f /swapfile ] || [ "$(swapon --show | wc -l)" -lt 2 ]; then
-    echo ">>> Создание swap 2GB..."
-    swapoff /swapfile 2>/dev/null || true
+# ---------- 2. Swap (сборка фронтенда требует памяти) ----------
+if [ ! -f /swapfile ]; then
+    echo ">>> Создаю swap 2 ГБ..."
     fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048
-    chmod 600 /swapfile
-    mkswap /swapfile
-    swapon /swapfile
+    chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
     grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
-    echo ">>> Swap создан"
 fi
 
-# 3. Клонирование/обновление кода
-APP_DIR="/root/plantakt"
+# ---------- 3. Код ----------
 if [ -d "$APP_DIR/.git" ]; then
-    echo ">>> Обновление кода..."
+    echo ">>> Обновляю код..."
     cd "$APP_DIR"
     git fetch origin
-    git reset --hard origin/main
+    git reset --hard "origin/$BRANCH"
 else
-    echo ">>> Клонирование репозитория..."
+    echo ">>> Клонирую репозиторий..."
     rm -rf "$APP_DIR"
-    git clone https://github.com/RomanKonovalovNLP/school-task-manager.git "$APP_DIR"
+    git clone "$REPO_URL" "$APP_DIR"
     cd "$APP_DIR"
 fi
 
-mkdir -p nginx/ssl
+mkdir -p nginx/ssl backups
 
-# 4. Остановка всего лишнего
-echo ">>> Остановка старых контейнеров..."
-docker compose down 2>/dev/null || true
-docker stop school_tasks_db temp_nginx 2>/dev/null || true
-docker rm school_tasks_db temp_nginx 2>/dev/null || true
-systemctl stop nginx 2>/dev/null || true
-systemctl disable nginx 2>/dev/null || true
-systemctl stop postgresql 2>/dev/null || true
-systemctl disable postgresql 2>/dev/null || true
+# ---------- 4. Настройки ----------
+# Секреты лежат в .env рядом с docker-compose.yml и в репозиторий не попадают.
+if [ ! -f "$APP_DIR/.env" ]; then
+    cat >&2 <<'MSG'
 
-# 5. Сборка и запуск
-echo ">>> Сборка контейнеров (5-10 минут)..."
-docker compose build --no-cache
+ОШИБКА: не найден файл .env с настройками.
+
+Создайте /root/plantakt/.env примерно такого содержания:
+
+  POSTGRES_USER=plantakt
+  POSTGRES_PASSWORD=<длинный пароль>
+  POSTGRES_DB=school_tasks
+  SUPER_ADMIN_SETUP_KEY=<openssl rand -hex 32>
+  FRONTEND_URL=https://plantakt.ru
+  REACT_APP_API_URL=https://plantakt.ru/api
+
+Затем запустите деплой ещё раз.
+MSG
+    exit 1
+fi
+
+# ---------- 5. Бэкап перед изменениями ----------
+if docker ps --format '{{.Names}}' | grep -q '^plantakt_db$'; then
+    echo ">>> Бэкап базы и вложений перед выкаткой..."
+    STAMP="$(date +%Y-%m-%d_%H%M)"
+    # shellcheck disable=SC1091
+    set -a; . "$APP_DIR/.env"; set +a
+    docker exec plantakt_db pg_dump -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-school_tasks}" -Fc \
+        > "backups/plantakt_db_${STAMP}.dump"
+    docker run --rm -v plantakt_uploads:/data -v "$APP_DIR/backups:/backup" alpine \
+        tar -czf "/backup/plantakt_files_${STAMP}.tar.gz" -C /data . 2>/dev/null || true
+    echo "    сохранено: backups/plantakt_db_${STAMP}.dump"
+    # Копии старше 14 дней удаляем
+    find backups -name 'plantakt_*' -type f -mtime +14 -delete 2>/dev/null || true
+else
+    echo ">>> База ещё не запущена — бэкап пропускаю (первый запуск)"
+fi
+
+# ---------- 6. Сборка и запуск ----------
+if [ "${1:-}" = "--build" ]; then
+    echo ">>> Полная пересборка образов (5–10 минут)..."
+    docker compose build --no-cache
+else
+    echo ">>> Сборка изменённых образов..."
+    docker compose build
+fi
 
 echo ">>> Запуск..."
 docker compose up -d
 
-echo ">>> Ожидание БД..."
-sleep 15
+# ---------- 7. Проверка ----------
+echo ">>> Жду готовности бэкенда..."
+OK=0
+for _ in $(seq 1 30); do
+    if docker exec plantakt_backend node -e "require('http').get('http://127.0.0.1:3000/', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))" 2>/dev/null; then
+        OK=1; break
+    fi
+    sleep 3
+done
 
-# 6. Миграции
-echo ">>> Миграции..."
-docker exec plantakt_db psql -U postgres -d school_tasks -c "
-    ALTER TABLE schedule_versions ADD COLUMN IF NOT EXISTS institution_type VARCHAR(20) DEFAULT 'school';
-    ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_personal BOOLEAN DEFAULT false;
-    ALTER TABLE tasks ADD COLUMN IF NOT EXISTS category_only BOOLEAN DEFAULT false;
-    CREATE TABLE IF NOT EXISTS agenda_items (id SERIAL PRIMARY KEY, event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE, title VARCHAR(255) NOT NULL, description TEXT, start_time TIME, end_time TIME, sort_order INTEGER DEFAULT 0, responsible_names JSONB, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW());
-    ALTER TABLE event_attachments ADD COLUMN IF NOT EXISTS agenda_item_id INTEGER REFERENCES agenda_items(id) ON DELETE CASCADE;
-    ALTER TABLE event_tasks ADD COLUMN IF NOT EXISTS agenda_item_id INTEGER REFERENCES agenda_items(id) ON DELETE CASCADE;
-    CREATE TABLE IF NOT EXISTS schedule_calendar_days (id SERIAL PRIMARY KEY, version_id INTEGER NOT NULL REFERENCES schedule_versions(id) ON DELETE CASCADE, date DATE NOT NULL, day_type VARCHAR(20) NOT NULL DEFAULT 'working', max_lessons INTEGER, week_number INTEGER, note TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE(version_id, date));
-    CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(session_token);
-    CREATE INDEX IF NOT EXISTS idx_calendar_days_version ON schedule_calendar_days(version_id);
-    CREATE INDEX IF NOT EXISTS idx_tasks_personal ON tasks(is_personal);
-    CREATE INDEX IF NOT EXISTS idx_agenda_items_event ON agenda_items(event_id);
-    ANALYZE;
-" 2>/dev/null || echo "Миграции OK (таблицы могут уже существовать)"
-
-# 7. Восстановление бэкапа БД если есть
-if [ -f /root/db_backup.sql ]; then
-    echo ">>> Восстановление БД из бэкапа..."
-    docker exec -i plantakt_db psql -U postgres -d school_tasks < /root/db_backup.sql 2>/dev/null || echo "Бэкап восстановлен (ошибки дубликатов — норма)"
-fi
-
-echo ""
-echo "=== Статус ==="
+echo
 docker compose ps
-
-echo ""
-echo "=== Готово! ==="
-echo "http://185.251.88.60 (без SSL)"
-echo ""
-echo "Для SSL выполни:"
-echo "  docker compose down"
-echo "  docker run --rm --network host -v plantakt_certbot_certs:/etc/letsencrypt certbot/certbot certonly --standalone --email roman@plantakt.ru --agree-tos --no-eff-email -d plantakt.ru -d www.plantakt.ru"
-echo "  docker compose up -d"
+echo
+if [ "$OK" = "1" ]; then
+    echo "=== Готово. Приложение отвечает. ==="
+else
+    echo "=== ВНИМАНИЕ: бэкенд не ответил за 90 секунд. Логи: ==="
+    echo "  docker compose logs --tail=50 backend"
+fi
+echo
+echo "Миграции применяются автоматически при старте бэкенда."
+echo "Проверить: docker compose logs backend | grep -i migration"

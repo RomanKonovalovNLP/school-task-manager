@@ -9,7 +9,6 @@ import { SchoolsModule } from './modules/schools/schools.module';
 import { AdminsModule } from './modules/admins/admins.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { TasksModule } from './modules/tasks/tasks.module';
-import { TaskPositionsModule } from './modules/task-positions/task-positions.module';
 import { FiltersModule } from './modules/filters/filters.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { StatisticsModule } from './modules/statistics/statistics.module';
@@ -42,7 +41,6 @@ import { ScheduleModule } from './modules/schedule/schedule.module';
     AdminsModule,
     AuthModule,
     TasksModule,
-    TaskPositionsModule,
     FiltersModule,
     NotificationsModule,
     StatisticsModule,

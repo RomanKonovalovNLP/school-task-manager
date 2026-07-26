@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { SchoolAuthGuard } from '../../../common/guards/school-auth.guard';
+import { AdminGuard } from '../../../common/guards/admin.guard';
 import { ScheduleVersionsService } from '../services/schedule-versions.service';
 import { ScheduleSolverService } from '../solver/schedule-solver.service';
 import { ScheduleValidatorService } from '../services/schedule-validator.service';
@@ -41,7 +42,7 @@ export class ScheduleVersionsController {
      */
     @Get()
     async findAll(@Request() req) {
-        return this.versionsService.findAll(req.user.schoolId);
+        return this.versionsService.findAll(req.user.schoolId, req.user.isAdmin);
     }
 
     /**
@@ -58,6 +59,7 @@ export class ScheduleVersionsController {
     /**
      * Создать новую версию расписания
      */
+    @UseGuards(AdminGuard)
     @Post()
     async create(
         @Body() dto: CreateScheduleVersionDto,
@@ -69,6 +71,7 @@ export class ScheduleVersionsController {
     /**
      * Обновить версию расписания
      */
+    @UseGuards(AdminGuard)
     @Put(':id')
     async update(
         @Param('id', ParseIntPipe) id: number,
@@ -81,6 +84,7 @@ export class ScheduleVersionsController {
     /**
      * Удалить версию расписания
      */
+    @UseGuards(AdminGuard)
     @Delete(':id')
     @HttpCode(HttpStatus.NO_CONTENT)
     async remove(
@@ -93,18 +97,21 @@ export class ScheduleVersionsController {
     /**
      * Копировать версию расписания
      */
+    @UseGuards(AdminGuard)
     @Post(':id/copy')
     async copy(
         @Param('id', ParseIntPipe) id: number,
         @Body('name') name: string,
+        @Body('type') type: string,
         @Request() req,
     ) {
-        return this.versionsService.copy(id, name, req.user.schoolId);
+        return this.versionsService.copy(id, name, req.user.schoolId, type as any);
     }
 
     /**
      * Активировать версию расписания
      */
+    @UseGuards(AdminGuard)
     @Post(':id/activate')
     async activate(
         @Param('id', ParseIntPipe) id: number,
@@ -116,6 +123,7 @@ export class ScheduleVersionsController {
     /**
      * Опубликовать версию расписания
      */
+    @UseGuards(AdminGuard)
     @Post(':id/publish')
     async publish(
         @Param('id', ParseIntPipe) id: number,
@@ -125,8 +133,21 @@ export class ScheduleVersionsController {
     }
 
     /**
+     * Снять расписание с публикации
+     */
+    @UseGuards(AdminGuard)
+    @Post(':id/unpublish')
+    async unpublish(
+        @Param('id', ParseIntPipe) id: number,
+        @Request() req,
+    ) {
+        return this.versionsService.unpublish(id, req.user.schoolId);
+    }
+
+    /**
      * Валидация расписания
      */
+    @UseGuards(AdminGuard)
     @Post(':id/validate')
     async validate(
         @Param('id', ParseIntPipe) id: number,
@@ -138,6 +159,7 @@ export class ScheduleVersionsController {
     /**
      * Автоматическое составление расписания
      */
+    @UseGuards(AdminGuard)
     @Post(':id/auto-generate')
     async autoGenerate(
         @Param('id', ParseIntPipe) id: number,
@@ -164,13 +186,16 @@ export class ScheduleVersionsController {
     /**
      * Экспорт расписания
      */
+    @UseGuards(AdminGuard)
     @Get(':id/export')
     async export(
         @Param('id', ParseIntPipe) id: number,
         @Query('format') format: 'xlsx' | 'pdf' | 'html',
-        @Query('view') view: 'class' | 'teacher' | 'room',
+        @Query('view') view: 'class' | 'teacher' | 'room' | 'master',
         @Query('ids') ids: string,
         @Query('weekType') weekType: 'odd' | 'even',
+        @Query('paper') paper: 'a4' | 'a5',
+        @Query('date') subDate: string,
         @Request() req,
         @Res() res: Response,
     ) {
@@ -182,6 +207,8 @@ export class ScheduleVersionsController {
             view: view || 'class',
             ids: parsedIds,
             weekType,
+            paper: paper || 'a4',
+            date: subDate || undefined,
         });
 
         const date = new Date().toISOString().split('T')[0];
@@ -190,8 +217,9 @@ export class ScheduleVersionsController {
             res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
             res.setHeader('Content-Disposition', `attachment; filename="schedule_${date}.xlsx"`);
         } else if (fmt === 'html') {
+            // inline — чтобы можно было открыть и сразу распечатать
             res.setHeader('Content-Type', 'text/html; charset=utf-8');
-            res.setHeader('Content-Disposition', `attachment; filename="schedule_${date}.html"`);
+            res.setHeader('Content-Disposition', `inline; filename="schedule_${date}.html"`);
         } else {
             res.setHeader('Content-Type', 'application/pdf');
             res.setHeader('Content-Disposition', `attachment; filename="schedule_${date}.pdf"`);
@@ -251,6 +279,7 @@ export class ScheduleVersionsController {
     /**
      * Получить конфликты расписания
      */
+    @UseGuards(AdminGuard)
     @Get(':id/conflicts')
     async getConflicts(
         @Param('id', ParseIntPipe) id: number,
@@ -267,6 +296,7 @@ export class ScheduleVersionsController {
     /**
      * Получить статистику расписания
      */
+    @UseGuards(AdminGuard)
     @Get(':id/statistics')
     async getStatistics(
         @Param('id', ParseIntPipe) id: number,

@@ -58,7 +58,7 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { scheduleService } from '../services/schedule.service';
-import { INSTITUTION_TYPES, getTerms } from '../utils/institutionTypes';
+import { INSTITUTION_TYPES, getTerms, InstitutionTerms } from '../utils/institutionTypes';
 import {
     SchoolClass,
     ClassGroup,
@@ -86,7 +86,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ children, value, index }) => (
 );
 
 // ==================== Классы (FIX #4 + #7) ====================
-const ClassesTab: React.FC<{ onError: (msg: string) => void; onSuccess: (msg: string) => void }> = ({ onError, onSuccess }) => {
+const ClassesTab: React.FC<{ terms: InstitutionTerms; onError: (msg: string) => void; onSuccess: (msg: string) => void }> = ({ terms, onError, onSuccess }) => {
     const [items, setItems] = useState<SchoolClass[]>([]);
     const [loading, setLoading] = useState(true);
     const [dialogOpen, setDialogOpen] = useState(false);
@@ -144,10 +144,10 @@ const ClassesTab: React.FC<{ onError: (msg: string) => void; onSuccess: (msg: st
         try {
             if (editing) {
                 await scheduleService.updateClass(editing.id, payload);
-                onSuccess('Класс обновлён');
+                onSuccess(`${terms.classLabel} обновлён(а)`);
             } else {
                 await scheduleService.createClass(payload);
-                onSuccess('Класс создан');
+                onSuccess(`${terms.classLabel} создан(а)`);
             }
             setDialogOpen(false);
             load();
@@ -157,10 +157,10 @@ const ClassesTab: React.FC<{ onError: (msg: string) => void; onSuccess: (msg: st
     };
 
     const handleDelete = async (id: number) => {
-        if (!window.confirm('Удалить класс?')) return;
+        if (!window.confirm(`Удалить ${terms.classLabelAcc}?`)) return;
         try {
             await scheduleService.deleteClass(id);
-            onSuccess('Класс удалён');
+            onSuccess(`${terms.classLabel} удалён(а)`);
             load();
         } catch (err: any) {
             onError(err.response?.data?.message || 'Ошибка удаления');
@@ -209,7 +209,7 @@ const ClassesTab: React.FC<{ onError: (msg: string) => void; onSuccess: (msg: st
     return (
         <>
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-                <Button variant="contained" startIcon={<Add />} onClick={openCreate}>Добавить класс</Button>
+                <Button variant="contained" startIcon={<Add />} onClick={openCreate}>Добавить {terms.classLabelAcc}</Button>
             </Box>
             <TableContainer component={Paper}>
                 <Table>
@@ -218,8 +218,8 @@ const ClassesTab: React.FC<{ onError: (msg: string) => void; onSuccess: (msg: st
                             <TableCell sx={{ width: 40 }} />
                             <TableCell>Цвет</TableCell>
                             <TableCell>Название</TableCell>
-                            <TableCell>Параллель</TableCell>
-                            <TableCell>Учеников</TableCell>
+                            <TableCell>{terms.gradeLevelShort}</TableCell>
+                            <TableCell>{terms.studentGenPlural}</TableCell>
                             <TableCell>Смена</TableCell>
                             <TableCell>Подгруппы</TableCell>
                             <TableCell align="right">Действия</TableCell>
@@ -228,7 +228,7 @@ const ClassesTab: React.FC<{ onError: (msg: string) => void; onSuccess: (msg: st
                     <TableBody>
                         {items.length === 0 ? (
                             <TableRow><TableCell colSpan={8} align="center" sx={{ py: 4 }}>
-                                <Typography color="text.secondary">Классы не добавлены</Typography>
+                                <Typography color="text.secondary">{terms.classLabelPlural} не добавлены</Typography>
                             </TableCell></TableRow>
                         ) : items.map((item) => (
                             <React.Fragment key={item.id}>
@@ -266,7 +266,7 @@ const ClassesTab: React.FC<{ onError: (msg: string) => void; onSuccess: (msg: st
                                         <Collapse in={expandedClassId === item.id} timeout="auto" unmountOnExit>
                                             <Box sx={{ px: 4, py: 2, bgcolor: 'grey.50' }}>
                                                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                                                    <Typography variant="subtitle2" color="text.secondary">Подгруппы класса {item.name}</Typography>
+                                                    <Typography variant="subtitle2" color="text.secondary">Подгруппы: {item.name}</Typography>
                                                     <Button size="small" startIcon={<Add />} onClick={() => openGroupCreate(item.id)}>Добавить подгруппу</Button>
                                                 </Box>
                                                 {(!item.groups || item.groups.length === 0) ? (
@@ -292,12 +292,12 @@ const ClassesTab: React.FC<{ onError: (msg: string) => void; onSuccess: (msg: st
 
             {/* Диалог класса */}
             <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>{editing ? 'Редактировать класс' : 'Добавить класс'}</DialogTitle>
+                <DialogTitle>{editing ? `Редактировать ${terms.classLabelAcc}` : `Добавить ${terms.classLabelAcc}`}</DialogTitle>
                 <DialogContent>
-                    <TextField fullWidth label="Название" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} sx={{ mt: 2, mb: 2 }} placeholder="Например: 5А" />
-                    {/* FIX #4: Параллель как текстовое поле — пользователь может удалить значение */}
-                    <TextField fullWidth label="Параллель (1-11)" type="number" value={form.gradeLevel} onChange={(e) => setForm({ ...form, gradeLevel: e.target.value })} sx={{ mb: 2 }} inputProps={{ min: 1, max: 11 }} placeholder="1" />
-                    <TextField fullWidth label="Количество учеников" type="number" value={form.studentsCount} onChange={(e) => setForm({ ...form, studentsCount: e.target.value })} sx={{ mb: 2 }} placeholder="25" />
+                    <TextField fullWidth label="Название" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} sx={{ mt: 2, mb: 2 }} placeholder={terms.type === 'school' ? 'Например: 5А' : 'Например: ИС-21'} />
+                    {/* Параллель/Курс как текстовое поле — пользователь может удалить значение */}
+                    <TextField fullWidth label={terms.gradeLevelLabel} type="number" value={form.gradeLevel} onChange={(e) => setForm({ ...form, gradeLevel: e.target.value })} sx={{ mb: 2 }} inputProps={{ min: terms.gradeLevelMin, max: terms.gradeLevelMax }} placeholder="1" />
+                    <TextField fullWidth label={`Количество: ${terms.studentGenPlural.toLowerCase()}`} type="number" value={form.studentsCount} onChange={(e) => setForm({ ...form, studentsCount: e.target.value })} sx={{ mb: 2 }} placeholder="25" />
                     {/* FIX #7: Выбор смены */}
                     <FormControl fullWidth sx={{ mb: 2 }}>
                         <InputLabel>Смена</InputLabel>
@@ -332,7 +332,7 @@ const ClassesTab: React.FC<{ onError: (msg: string) => void; onSuccess: (msg: st
 };
 
 // ==================== Учителя ====================
-const TeachersTab: React.FC<{ onError: (msg: string) => void; onSuccess: (msg: string) => void }> = ({ onError, onSuccess }) => {
+const TeachersTab: React.FC<{ terms: InstitutionTerms; onError: (msg: string) => void; onSuccess: (msg: string) => void }> = ({ terms, onError, onSuccess }) => {
     const [items, setItems] = useState<Teacher[]>([]);
     const [subjects, setSubjects] = useState<Subject[]>([]);
     const [loading, setLoading] = useState(true);
@@ -363,15 +363,15 @@ const TeachersTab: React.FC<{ onError: (msg: string) => void; onSuccess: (msg: s
 
     const handleSave = async () => {
         try {
-            if (editing) { await scheduleService.updateTeacher(editing.id, form); onSuccess('Учитель обновлён'); }
-            else { await scheduleService.createTeacher(form); onSuccess('Учитель создан'); }
+            if (editing) { await scheduleService.updateTeacher(editing.id, form); onSuccess(`${terms.teacherLabel} обновлён(а)`); }
+            else { await scheduleService.createTeacher(form); onSuccess(`${terms.teacherLabel} создан(а)`); }
             setDialogOpen(false); load();
         } catch (err: any) { onError(err.response?.data?.message || 'Ошибка сохранения'); }
     };
 
     const handleDelete = async (id: number) => {
-        if (!window.confirm('Удалить учителя?')) return;
-        try { await scheduleService.deleteTeacher(id); onSuccess('Учитель удалён'); load(); }
+        if (!window.confirm(`Удалить ${terms.teacherLabelAcc}?`)) return;
+        try { await scheduleService.deleteTeacher(id); onSuccess(`${terms.teacherLabel} удалён(а)`); load(); }
         catch (err: any) { onError(err.response?.data?.message || 'Ошибка удаления'); }
     };
 
@@ -380,7 +380,7 @@ const TeachersTab: React.FC<{ onError: (msg: string) => void; onSuccess: (msg: s
     return (
         <>
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-                <Button variant="contained" startIcon={<Add />} onClick={openCreate}>Добавить учителя</Button>
+                <Button variant="contained" startIcon={<Add />} onClick={openCreate}>Добавить {terms.teacherLabelAcc}</Button>
             </Box>
             <TableContainer component={Paper}>
                 <Table>
@@ -396,7 +396,7 @@ const TeachersTab: React.FC<{ onError: (msg: string) => void; onSuccess: (msg: s
                     </TableHead>
                     <TableBody>
                         {items.length === 0 ? (
-                            <TableRow><TableCell colSpan={6} align="center" sx={{ py: 4 }}><Typography color="text.secondary">Учителя не добавлены</Typography></TableCell></TableRow>
+                            <TableRow><TableCell colSpan={6} align="center" sx={{ py: 4 }}><Typography color="text.secondary">{terms.teacherLabelPlural} не добавлены</Typography></TableCell></TableRow>
                         ) : items.map((item) => (
                             <TableRow key={item.id} hover>
                                 <TableCell><Box sx={{ width: 24, height: 24, borderRadius: '50%', bgcolor: item.color }} /></TableCell>
@@ -419,7 +419,7 @@ const TeachersTab: React.FC<{ onError: (msg: string) => void; onSuccess: (msg: s
             </TableContainer>
 
             <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>{editing ? 'Редактировать учителя' : 'Добавить учителя'}</DialogTitle>
+                <DialogTitle>{editing ? `Редактировать ${terms.teacherLabelAcc}` : `Добавить ${terms.teacherLabelAcc}`}</DialogTitle>
                 <DialogContent>
                     <TextField fullWidth label="ФИО" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} sx={{ mt: 2, mb: 2 }} />
                     <TextField fullWidth label="Краткое имя" value={form.shortName} onChange={(e) => setForm({ ...form, shortName: e.target.value })} sx={{ mb: 2 }} placeholder="Иванов И.И." />
@@ -551,7 +551,7 @@ const ROOM_TYPE_LABELS: Record<string, string> = {
     workshop: 'Мастерская', music: 'Музыкальный', art: 'Рисование', assembly: 'Актовый зал', library: 'Библиотека',
 };
 
-const RoomsTab: React.FC<{ onError: (msg: string) => void; onSuccess: (msg: string) => void }> = ({ onError, onSuccess }) => {
+const RoomsTab: React.FC<{ terms: InstitutionTerms; onError: (msg: string) => void; onSuccess: (msg: string) => void }> = ({ terms, onError, onSuccess }) => {
     const [items, setItems] = useState<Room[]>([]);
     const [loading, setLoading] = useState(true);
     const [dialogOpen, setDialogOpen] = useState(false);
@@ -560,7 +560,7 @@ const RoomsTab: React.FC<{ onError: (msg: string) => void; onSuccess: (msg: stri
 
     const load = useCallback(async () => {
         try { setLoading(true); const data = await scheduleService.getRooms(); setItems(Array.isArray(data) ? data : data.rooms || []); }
-        catch { onError('Ошибка загрузки кабинетов'); }
+        catch { onError('Ошибка загрузки'); }
         finally { setLoading(false); }
     }, [onError]);
     useEffect(() => { load(); }, [load]);
@@ -571,15 +571,15 @@ const RoomsTab: React.FC<{ onError: (msg: string) => void; onSuccess: (msg: stri
     const handleSave = async () => {
         try {
             const payload = { name: form.name, capacity: Number(form.capacity) || 30, floor: form.floor ? Number(form.floor) : undefined, type: form.type as RoomType };
-            if (editing) { await scheduleService.updateRoom(editing.id, payload); onSuccess('Кабинет обновлён'); }
-            else { await scheduleService.createRoom(payload); onSuccess('Кабинет создан'); }
+            if (editing) { await scheduleService.updateRoom(editing.id, payload); onSuccess(`${terms.roomLabel} обновлён(а)`); }
+            else { await scheduleService.createRoom(payload); onSuccess(`${terms.roomLabel} создан(а)`); }
             setDialogOpen(false); load();
         } catch (err: any) { onError(err.response?.data?.message || 'Ошибка сохранения'); }
     };
 
     const handleDelete = async (id: number) => {
-        if (!window.confirm('Удалить кабинет?')) return;
-        try { await scheduleService.deleteRoom(id); onSuccess('Кабинет удалён'); load(); }
+        if (!window.confirm(`Удалить ${terms.roomLabelAcc}?`)) return;
+        try { await scheduleService.deleteRoom(id); onSuccess(`${terms.roomLabel} удалён(а)`); load(); }
         catch (err: any) { onError(err.response?.data?.message || 'Ошибка удаления'); }
     };
 
@@ -588,7 +588,7 @@ const RoomsTab: React.FC<{ onError: (msg: string) => void; onSuccess: (msg: stri
     return (
         <>
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-                <Button variant="contained" startIcon={<Add />} onClick={openCreate}>Добавить кабинет</Button>
+                <Button variant="contained" startIcon={<Add />} onClick={openCreate}>Добавить {terms.roomLabelAcc}</Button>
             </Box>
             <TableContainer component={Paper}>
                 <Table>
@@ -598,7 +598,7 @@ const RoomsTab: React.FC<{ onError: (msg: string) => void; onSuccess: (msg: stri
                     </TableRow></TableHead>
                     <TableBody>
                         {items.length === 0 ? (
-                            <TableRow><TableCell colSpan={5} align="center" sx={{ py: 4 }}><Typography color="text.secondary">Кабинеты не добавлены</Typography></TableCell></TableRow>
+                            <TableRow><TableCell colSpan={5} align="center" sx={{ py: 4 }}><Typography color="text.secondary">{terms.roomLabelPlural} не добавлены</Typography></TableCell></TableRow>
                         ) : items.map((item) => (
                             <TableRow key={item.id} hover>
                                 <TableCell><Typography variant="body2" sx={{ fontWeight: 500 }}>{item.name}</Typography></TableCell>
@@ -616,7 +616,7 @@ const RoomsTab: React.FC<{ onError: (msg: string) => void; onSuccess: (msg: stri
             </TableContainer>
 
             <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>{editing ? 'Редактировать кабинет' : 'Добавить кабинет'}</DialogTitle>
+                <DialogTitle>{editing ? `Редактировать ${terms.roomLabelAcc}` : `Добавить ${terms.roomLabelAcc}`}</DialogTitle>
                 <DialogContent>
                     <TextField fullWidth label="Название" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} sx={{ mt: 2, mb: 2 }} />
                     <FormControl fullWidth sx={{ mb: 2 }}>
@@ -1018,16 +1018,16 @@ const ScheduleManagementPage: React.FC = () => {
             </Paper>
 
             <TabPanel value={tabIndex} index={0}>
-                <ClassesTab onError={handleError} onSuccess={handleSuccess} />
+                <ClassesTab terms={terms} onError={handleError} onSuccess={handleSuccess} />
             </TabPanel>
             <TabPanel value={tabIndex} index={1}>
-                <TeachersTab onError={handleError} onSuccess={handleSuccess} />
+                <TeachersTab terms={terms} onError={handleError} onSuccess={handleSuccess} />
             </TabPanel>
             <TabPanel value={tabIndex} index={2}>
                 <SubjectsTab onError={handleError} onSuccess={handleSuccess} />
             </TabPanel>
             <TabPanel value={tabIndex} index={3}>
-                <RoomsTab onError={handleError} onSuccess={handleSuccess} />
+                <RoomsTab terms={terms} onError={handleError} onSuccess={handleSuccess} />
             </TabPanel>
             <TabPanel value={tabIndex} index={4}>
                 <BellScheduleTab onError={handleError} onSuccess={handleSuccess} />

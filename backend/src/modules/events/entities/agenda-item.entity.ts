@@ -54,9 +54,9 @@ export class AgendaItem {
     @OneToMany(() => EventTask, (task) => task.agendaItem, { cascade: true })
     tasks: EventTask[];
 
-    @CreateDateColumn({ name: 'created_at' })
+    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
     createdAt: Date;
 
-    @UpdateDateColumn({ name: 'updated_at' })
+    @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
     updatedAt: Date;
 }

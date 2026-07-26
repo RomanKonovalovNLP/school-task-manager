@@ -71,8 +71,15 @@ export class EventsController {
      * GET /events/date/2025-01-15
      */
     @Get('date/:date')
-    findByDate(@CurrentUser() user: any, @Param('date') date: string) {
-        return this.eventsService.findByDate(user, date);
+    findByDate(
+        @CurrentUser() user: any,
+        @Param('date') date: string,
+        @Query('tz') tz?: string,
+    ) {
+        // tz — сдвиг часового пояса клиента (getTimezoneOffset), чтобы день считался
+        // в поясе пользователя, а не сервера
+        const tzOffset = tz !== undefined && tz !== '' ? Number(tz) : undefined;
+        return this.eventsService.findByDate(user, date, tzOffset);
     }
 
     /**

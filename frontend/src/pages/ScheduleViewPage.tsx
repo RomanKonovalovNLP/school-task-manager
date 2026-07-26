@@ -31,11 +31,12 @@ const ScheduleViewPage: React.FC = () => {
     const [subjects, setSubjects] = useState<Subject[]>([]);
     const [rooms, setRooms] = useState<Room[]>([]);
     const [calendarDays, setCalendarDays] = useState<any[]>([]);
+    const [bells, setBells] = useState<any[]>([]);
 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [viewMode, setViewMode] = useState<ViewMode>('class');
-    const [selectedEntity, setSelectedEntity] = useState<number | null>(null);
+    const [selectedColumns, setSelectedColumns] = useState<Set<number>>(new Set());
     const [weekTab, setWeekTab] = useState<'odd' | 'even'>('odd');
     const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => getMonday(new Date()));
 
@@ -45,12 +46,14 @@ const ScheduleViewPage: React.FC = () => {
     const workingDays = version?.workingDays || WORKING_DAYS_5;
     const maxLessons = version?.maxLessonsPerDay || 7;
 
+    const effectiveMode: 'class' | 'teacher' | 'room' = viewMode;
+
     useEffect(() => {
         (async () => {
             try {
                 const data = await scheduleService.getVersions();
                 const list = Array.isArray(data) ? data : data.versions || [];
-                const visible = user?.isAdmin ? list : list.filter((v: any) => v.isActive || v.status === 'published');
+                const visible = user?.isAdmin ? list : list.filter((v: any) => v.status === 'published');
                 setVersions(visible);
                 const active = visible.find((v: any) => v.isActive);
                 if (active) setSelectedVersionId(active.id);
@@ -63,15 +66,17 @@ const ScheduleViewPage: React.FC = () => {
         if (!selectedVersionId) return;
         try {
             setLoading(true); setError(null);
-            const [data, cd, td, sd, rd] = await Promise.all([
+            const [data, cd, td, sd, rd, bd] = await Promise.all([
                 scheduleService.getVersion(selectedVersionId), scheduleService.getClasses(),
                 scheduleService.getTeachers(), scheduleService.getSubjects(), scheduleService.getRooms(),
+                scheduleService.getBellSchedules().catch(() => []),
             ]);
             setVersion(data.version); setLessons(data.lessons);
             setClasses(Array.isArray(cd) ? cd : cd.classes || []);
             setTeachers(Array.isArray(td) ? td : td.teachers || []);
             setSubjects(Array.isArray(sd) ? sd : sd.subjects || []);
             setRooms(Array.isArray(rd) ? rd : rd.rooms || []);
+            setBells(Array.isArray(bd) ? bd : (bd?.bellSchedules || bd?.bells || []));
             if (data.version?.type === ScheduleVersionType.PERIOD) {
                 try { const cal = await scheduleService.getCalendarDays(selectedVersionId); setCalendarDays(Array.isArray(cal) ? cal : []); } catch { setCalendarDays([]); }
                 if (data.version.startDate) {
@@ -87,9 +92,10 @@ const ScheduleViewPage: React.FC = () => {
     useEffect(() => { loadVersion(); }, [loadVersion]);
 
     const visibleDays = useMemo(() => DAYS_OF_WEEK.filter(d => d.num <= 7 && isDayWorking(workingDays, d.num)), [workingDays]);
+    const lessonNums = useMemo(() => Array.from({ length: maxLessons }, (_, i) => i + 1), [maxLessons]);
 
     const weekDates = useMemo(() => {
-        if (!isPeriod) return {};
+        if (!isPeriod) return {} as Record<number, Date>;
         const dates: Record<number, Date> = {};
         for (let i = 0; i < 7; i++) { const d = new Date(currentWeekStart); d.setDate(d.getDate() + i); const iso = d.getDay() === 0 ? 7 : d.getDay(); dates[iso] = d; }
         return dates;
@@ -102,22 +108,68 @@ const ScheduleViewPage: React.FC = () => {
         return md?.weekNumber || null;
     }, [isOddEven, isPeriod, calendarDays, currentWeekStart]);
 
-    const filteredLessons = useMemo(() => {
+    // Уроки после фильтра по неделе (чёт/нечёт)
+    const weekLessons = useMemo(() => {
         let result = lessons;
-        if (selectedEntity) {
-            result = result.filter(l => { const w = l.workload;
-                if (viewMode === 'class') return w?.schoolClass?.id === selectedEntity || l.schoolClass?.id === selectedEntity;
-                if (viewMode === 'teacher') return w?.teacher?.id === selectedEntity || l.teacher?.id === selectedEntity;
-                if (viewMode === 'room') return l.roomId === selectedEntity || l.room?.id === selectedEntity || w?.room?.id === selectedEntity;
-                return true; });
-        }
         if (isOddEven && !isPeriod) result = result.filter(l => l.weekType === 'both' || l.weekType === weekTab);
         if (isOddEven && isPeriod && currentWeekNumber) {
             const wt = currentWeekNumber === 1 ? 'odd' : 'even';
             result = result.filter(l => l.weekType === 'both' || l.weekType === wt);
         }
         return result;
-    }, [lessons, selectedEntity, viewMode, isOddEven, isPeriod, weekTab, currentWeekNumber]);
+    }, [lessons, isOddEven, isPeriod, weekTab, currentWeekNumber]);
+
+    // Индекс: день-урок-сущность -> уроки (для быстрой отрисовки шахматки)
+    const cellIndex = useMemo(() => {
+        const idOf = (l: ScheduleLesson): number | undefined => {
+            const w = l.workload;
+            if (effectiveMode === 'class') return w?.schoolClass?.id ?? (l as any).schoolClass?.id;
+            if (effectiveMode === 'teacher') return w?.teacher?.id ?? (l as any).teacher?.id;
+            return l.roomId ?? l.room?.id ?? w?.room?.id;
+        };
+        const m = new Map<string, ScheduleLesson[]>();
+        for (const l of weekLessons) {
+            const eid = idOf(l);
+            if (eid == null) continue;
+            const k = `${l.dayOfWeek}-${l.lessonNumber}-${eid}`;
+            const arr = m.get(k); if (arr) arr.push(l); else m.set(k, [l]);
+        }
+        return m;
+    }, [weekLessons, effectiveMode]);
+
+    // Столбцы: классы / учителя / кабинеты (подписаны в шапке)
+    const columns = useMemo(() => {
+        let base: { id: number; label: string; shift?: number }[];
+        if (effectiveMode === 'class') {
+            base = [...classes]
+                .sort((a, b) => (((a as any).shift || 1) - ((b as any).shift || 1)) || (a.gradeLevel - b.gradeLevel) || a.name.localeCompare(b.name, 'ru', { numeric: true }))
+                .map(c => ({ id: c.id, label: c.name, shift: (c as any).shift || 1 }));
+        } else if (effectiveMode === 'teacher') {
+            base = [...teachers].sort((a, b) => (a.shortName || a.fullName).localeCompare(b.shortName || b.fullName, 'ru')).map(t => ({ id: t.id, label: t.shortName || t.fullName }));
+        } else {
+            base = [...rooms].sort((a, b) => a.name.localeCompare(b.name, 'ru', { numeric: true })).map(r => ({ id: r.id, label: r.name }));
+        }
+        if (selectedColumns.size > 0) base = base.filter(c => selectedColumns.has(c.id));
+        return base;
+    }, [effectiveMode, classes, teachers, rooms, selectedColumns]);
+
+    // Группировка столбцов по сменам (для класса): сначала 1 смена, затем 2
+    const shiftHeader = useMemo(() => {
+        if (effectiveMode !== 'class') return null;
+        const segs: { shift: number; span: number }[] = [];
+        for (const c of columns) {
+            const sh = (c as any).shift || 1;
+            const last = segs[segs.length - 1];
+            if (last && last.shift === sh) last.span++; else segs.push({ shift: sh, span: 1 });
+        }
+        return segs.length > 1 ? segs : null;
+    }, [effectiveMode, columns]);
+
+    const entityChips = useMemo(() => {
+        if (effectiveMode === 'class') return classes.map(c => ({ id: c.id, label: c.name }));
+        if (effectiveMode === 'teacher') return teachers.map(t => ({ id: t.id, label: t.shortName || t.fullName }));
+        return rooms.map(r => ({ id: r.id, label: r.name }));
+    }, [effectiveMode, classes, teachers, rooms]);
 
     const isDayOff = (dayNum: number) => {
         if (!isPeriod || !calendarDays.length) return false;
@@ -126,94 +178,173 @@ const ScheduleViewPage: React.FC = () => {
         return calendarDays.find((d: any) => d.date?.slice(0, 10) === ds)?.dayType === 'holiday';
     };
 
-    const getCellLessons = (day: number, n: number) => filteredLessons.filter(l => l.dayOfWeek === day && l.lessonNumber === n);
+    const toggleColumn = (id: number) => setSelectedColumns(prev => {
+        const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
+    });
 
-    const renderLesson = (lesson: ScheduleLesson) => {
-        const w = lesson.workload;
+    const handleTabChange = (m: ViewMode) => { setViewMode(m); setSelectedColumns(new Set()); };
+
+    const renderCell = (l: ScheduleLesson) => {
+        const w = l.workload;
+        const subj = w?.subject?.shortName || w?.subject?.name || '?';
+        let secondary = '';
+        if (effectiveMode === 'class') secondary = [w?.teacher?.shortName, l.room?.name || w?.room?.name].filter(Boolean).join(' · ');
+        else if (effectiveMode === 'teacher') secondary = [w?.schoolClass?.name, l.room?.name || w?.room?.name].filter(Boolean).join(' · ');
+        else secondary = [w?.schoolClass?.name, w?.teacher?.shortName].filter(Boolean).join(' · ');
         return (
-            <Box key={lesson.id} sx={{ p: 0.5, mb: 0.3, borderRadius: 1, bgcolor: w?.subject?.color ? `${w.subject.color}20` : 'action.hover', borderLeft: `3px solid ${w?.subject?.color || '#999'}`, fontSize: '0.75rem', lineHeight: 1.3 }}>
-                <Typography variant="caption" sx={{ fontWeight: 600, display: 'block' }}>
-                    {w?.subject?.shortName || w?.subject?.name || '?'}{w?.group?.name ? ` (${w.group.name})` : ''}
+            <Box key={l.id} sx={{ p: 0.5, mb: 0.3, borderRadius: 1, bgcolor: w?.subject?.color ? `${w.subject.color}22` : 'action.hover', borderLeft: `3px solid ${w?.subject?.color || '#999'}`, lineHeight: 1.25 }}>
+                <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', fontSize: '0.72rem' }}>
+                    {subj}{w?.group?.name ? ` (${w.group.name})` : ''}
                 </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                    {viewMode !== 'teacher' && (w?.teacher?.shortName || '')}{viewMode !== 'room' && (lesson.room?.name || w?.room?.name) ? `${viewMode !== 'teacher' && w?.teacher?.shortName ? ' · ' : ''}${lesson.room?.name || w?.room?.name}` : ''}
-                    {viewMode !== 'class' && w?.schoolClass?.name ? ` · ${w.schoolClass.name}` : ''}
-                </Typography>
+                {secondary && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.66rem' }}>{secondary}</Typography>}
             </Box>
         );
     };
 
+    const colLabel = effectiveMode === 'class' ? terms.classLabel : effectiveMode === 'teacher' ? terms.teacherLabel : terms.roomLabel;
+
+    const bellTime = (shift: number, n: number): string => {
+        const b = bells.find((x: any) => ((x.shift || 1) === shift) && x.lessonNumber === n);
+        if (!b) return '';
+        const t = (v?: string) => (v ? String(v).slice(0, 5) : '');
+        return t(b.startTime) && t(b.endTime) ? `${t(b.startTime)}–${t(b.endTime)}` : '';
+    };
+
+    // Таблица для набора столбцов (смены выводятся отдельными таблицами)
+    const renderTable = (cols: { id: number; label: string }[], shift = 1) => (
+        <TableContainer component={Paper} sx={{ mb: 2, maxHeight: '75vh' }}>
+            <Table size="small" stickyHeader sx={{ '& td, & th': { border: '1px solid', borderColor: 'divider' } }}>
+                <TableHead>
+                    <TableRow>
+                        <TableCell sx={{ fontWeight: 700, bgcolor: 'grey.100', position: 'sticky', left: 0, zIndex: 3, minWidth: 40 }}>№</TableCell>
+                        {cols.map(c => (
+                            <TableCell key={c.id} align="center" sx={{ fontWeight: 700, bgcolor: 'primary.light', color: 'primary.contrastText', minWidth: 96 }}>
+                                {c.label}
+                            </TableCell>
+                        ))}
+                    </TableRow>
+                </TableHead>
+                <TableBody>
+                    {visibleDays.map(day => {
+                        const off = isDayOff(day.num);
+                        const date = weekDates[day.num];
+                        return (
+                            <React.Fragment key={day.num}>
+                                <TableRow>
+                                    <TableCell colSpan={1 + cols.length} sx={{ fontWeight: 700, bgcolor: off ? '#ffcdd2' : day.num === 6 ? 'secondary.light' : 'grey.200', color: off ? '#b71c1c' : 'inherit', position: 'sticky', left: 0 }}>
+                                        {day.name}{date ? ` · ${date.getDate()}.${String(date.getMonth() + 1).padStart(2, '0')}` : ''}{off ? ' — выходной' : ''}
+                                    </TableCell>
+                                </TableRow>
+                                {!off && lessonNums.map(n => (
+                                    <TableRow key={n} hover>
+                                        <TableCell sx={{ fontWeight: 600, textAlign: 'center', bgcolor: 'grey.50', position: 'sticky', left: 0, zIndex: 1, whiteSpace: 'nowrap' }}>
+                                            {n}
+                                            {bellTime(shift, n) && <Typography variant="caption" sx={{ display: 'block', fontWeight: 400, color: 'text.secondary', fontSize: '0.6rem' }}>{bellTime(shift, n)}</Typography>}
+                                        </TableCell>
+                                        {cols.map(c => {
+                                            const cell = cellIndex.get(`${day.num}-${n}-${c.id}`) || [];
+                                            return (
+                                                <TableCell key={c.id} sx={{ p: 0.3, verticalAlign: 'top' }}>
+                                                    {cell.map(renderCell)}
+                                                </TableCell>
+                                            );
+                                        })}
+                                    </TableRow>
+                                ))}
+                            </React.Fragment>
+                        );
+                    })}
+                </TableBody>
+            </Table>
+        </TableContainer>
+    );
+
     if (loading && !version) return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>;
 
     return (
-        <Container maxWidth="xl" sx={{ py: 3 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+        <Container maxWidth={false} sx={{ py: 3 }}>
+            <Box className="no-print" sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
                 <Tooltip title="На главную"><IconButton onClick={() => navigate('/dashboard')}><Home /></IconButton></Tooltip>
                 <CalendarMonth color="primary" sx={{ fontSize: 32 }} />
                 <Typography variant="h4">Расписание</Typography>
                 {versions.length > 1 && (
-                    <FormControl size="small" sx={{ minWidth: 200 }}><InputLabel>Версия</InputLabel>
+                    <FormControl size="small" sx={{ minWidth: 220 }}><InputLabel>Версия</InputLabel>
                         <Select value={selectedVersionId || ''} label="Версия" onChange={(e) => setSelectedVersionId(Number(e.target.value))}>
-                            {versions.map(v => <MenuItem key={v.id} value={v.id}>{v.name} {(v as any).isActive ? '(активная)' : ''}</MenuItem>)}
+                            {versions.map(v => <MenuItem key={v.id} value={v.id}>{v.name} {(v as any).isActive ? '(основная)' : ''}</MenuItem>)}
                         </Select></FormControl>
                 )}
                 {user?.isAdmin && <Box sx={{ ml: 'auto' }}><Chip label="Управление" variant="outlined" clickable onClick={() => navigate('/schedule/admin')} /></Box>}
             </Box>
-            {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-            {versions.length === 0 && !loading && <Alert severity="info">Расписание ещё не опубликовано.</Alert>}
+
+            {error && <Alert severity="error" sx={{ mb: 2 }} className="no-print">{error}</Alert>}
+            {versions.length === 0 && !loading && (
+                <Alert severity="info" className="no-print">
+                    {user?.isAdmin
+                        ? 'Нет опубликованных версий расписания. Опубликуйте расписание в разделе «Управление», чтобы оно стало видно педагогам.'
+                        : 'Нет опубликованных версий расписания (обратитесь к администратору школы).'}
+                </Alert>
+            )}
+
             {version && (
                 <>
-                    <Paper sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}>
-                        <Tabs value={viewMode} onChange={(_, v) => { setViewMode(v); setSelectedEntity(null); }}>
-                            <Tab value="class" label={terms.byClassTab} /><Tab value="teacher" label={terms.byTeacherTab} /><Tab value="room" label={terms.byRoomTab} />
+                    <Paper className="no-print" sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}>
+                        <Tabs value={viewMode} onChange={(_, v) => handleTabChange(v)} variant="scrollable" scrollButtons="auto">
+                            <Tab value="class" label={terms.byClassTab} />
+                            <Tab value="teacher" label={terms.byTeacherTab} />
+                            <Tab value="room" label={terms.byRoomTab} />
                         </Tabs>
                     </Paper>
-                    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 2 }}>
-                        {viewMode === 'class' && classes.map(c => <Chip key={c.id} label={c.name} size="small" variant={selectedEntity === c.id ? 'filled' : 'outlined'} color={selectedEntity === c.id ? 'primary' : 'default'} onClick={() => setSelectedEntity(selectedEntity === c.id ? null : c.id)} sx={{ cursor: 'pointer' }} />)}
-                        {viewMode === 'teacher' && teachers.map(t => <Chip key={t.id} label={t.shortName || t.fullName} size="small" variant={selectedEntity === t.id ? 'filled' : 'outlined'} color={selectedEntity === t.id ? 'primary' : 'default'} onClick={() => setSelectedEntity(selectedEntity === t.id ? null : t.id)} sx={{ cursor: 'pointer' }} />)}
-                        {viewMode === 'room' && rooms.map(r => <Chip key={r.id} label={r.name} size="small" variant={selectedEntity === r.id ? 'filled' : 'outlined'} color={selectedEntity === r.id ? 'primary' : 'default'} onClick={() => setSelectedEntity(selectedEntity === r.id ? null : r.id)} sx={{ cursor: 'pointer' }} />)}
+
+                    {/* Фильтр столбцов + печать */}
+                    <Box className="no-print" sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 2 }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ mr: 0.5 }}>
+                            Показать {colLabel.toLowerCase()}:
+                        </Typography>
+                        {entityChips.map(c => (
+                            <Chip key={c.id} label={c.label} size="small"
+                                variant={selectedColumns.has(c.id) ? 'filled' : 'outlined'}
+                                color={selectedColumns.has(c.id) ? 'primary' : 'default'}
+                                onClick={() => toggleColumn(c.id)} sx={{ cursor: 'pointer' }} />
+                        ))}
+                        {selectedColumns.size > 0 && <Chip label="Сбросить" size="small" onClick={() => setSelectedColumns(new Set())} />}
+                        {selectedColumns.size === 0 && <Typography variant="caption" color="text.secondary">(показаны все)</Typography>}
                     </Box>
-                    {isPeriod && <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}><WeekNavigator currentWeekStart={currentWeekStart} onWeekChange={setCurrentWeekStart}
+
+                    {isPeriod && <Box className="no-print" sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}><WeekNavigator currentWeekStart={currentWeekStart} onWeekChange={setCurrentWeekStart}
                         minDate={version.startDate ? new Date(version.startDate) : undefined} maxDate={version.endDate ? new Date(version.endDate) : undefined} weekNumber={currentWeekNumber} /></Box>}
                     {isOddEven && !isPeriod && (
-                        <Paper sx={{ mb: 2, display: 'inline-flex', borderRadius: 2, overflow: 'hidden' }}>
+                        <Paper className="no-print" sx={{ mb: 2, display: 'inline-flex', borderRadius: 2, overflow: 'hidden' }}>
                             <Tabs value={weekTab} onChange={(_, v) => setWeekTab(v)}>
                                 <Tab value="odd" label="I неделя (нечётная)" sx={{ bgcolor: weekTab === 'odd' ? '#e3f2fd' : 'transparent' }} />
                                 <Tab value="even" label="II неделя (чётная)" sx={{ bgcolor: weekTab === 'even' ? '#fce4ec' : 'transparent' }} />
                             </Tabs>
                         </Paper>
                     )}
-                    <TableContainer component={Paper} sx={{ mb: 3 }}>
-                        <Table size="small" sx={{ tableLayout: 'fixed' }}>
-                            <TableHead><TableRow>
-                                <TableCell sx={{ width: 50, fontWeight: 600 }}>№</TableCell>
-                                {visibleDays.map(d => {
-                                    const date = weekDates[d.num]; const off = isDayOff(d.num);
-                                    return <TableCell key={d.num} align="center" sx={{ fontWeight: 600, bgcolor: off ? '#ffcdd2' : d.num === 6 ? 'secondary.light' : 'primary.light', color: off ? '#b71c1c' : d.num === 6 ? 'secondary.contrastText' : 'primary.contrastText' }}>
-                                        {d.name}{date && <Typography variant="caption" sx={{ display: 'block', opacity: 0.9, fontWeight: 400 }}>{date.getDate()}.{String(date.getMonth()+1).padStart(2,'0')}</Typography>}
-                                        {off && <Typography variant="caption" sx={{ display: 'block', fontSize: '0.6rem' }}>выходной</Typography>}
-                                    </TableCell>;
-                                })}
-                            </TableRow></TableHead>
-                            <TableBody>
-                                {Array.from({ length: maxLessons }, (_, i) => i + 1).map(n => (
-                                    <TableRow key={n} sx={{ '&:nth-of-type(even)': { bgcolor: 'grey.50' } }}>
-                                        <TableCell sx={{ fontWeight: 600, textAlign: 'center' }}>{n}</TableCell>
-                                        {visibleDays.map(d => {
-                                            const off = isDayOff(d.num);
-                                            return <TableCell key={d.num} sx={{ p: 0.5, verticalAlign: 'top', minHeight: 60, bgcolor: off ? '#ffebee' : undefined }}>
-                                                {!off && getCellLessons(d.num, n).map(renderLesson)}
-                                            </TableCell>;
-                                        })}
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </TableContainer>
-                    <Typography variant="caption" color="text.secondary">
-                        {version.name}{isPeriod && version.startDate && version.endDate ? ` · ${new Date(version.startDate).toLocaleDateString('ru-RU')} — ${new Date(version.endDate).toLocaleDateString('ru-RU')}` : ''}
-                        {isOddEven ? ' · Двухнедельное' : ''}{(version as any).institutionType && (version as any).institutionType !== 'school' ? ` · ${terms.label}` : ''}
-                    </Typography>
+
+                    <Box>
+                        {columns.length === 0 ? (
+                            <Alert severity="info" className="no-print">Нет данных для отображения. Выберите {colLabel.toLowerCase()} выше.</Alert>
+                        ) : effectiveMode === 'class' ? (
+                            [1, 2].map((sh) => {
+                                const cols = columns.filter((c) => ((c as any).shift || 1) === sh);
+                                if (cols.length === 0) return null;
+                                return (
+                                    <Box key={sh} sx={{ mb: 1 }}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                            <Chip size="small" color={sh === 2 ? 'secondary' : 'primary'} label={`${sh} смена`} sx={{ fontWeight: 600 }} />
+                                        </Box>
+                                        {renderTable(cols, sh)}
+                                    </Box>
+                                );
+                            })
+                        ) : (
+                            renderTable(columns, 1)
+                        )}
+                        <Typography variant="caption" color="text.secondary">
+                            {version.name}{isPeriod && version.startDate && version.endDate ? ` · ${new Date(version.startDate).toLocaleDateString('ru-RU')} — ${new Date(version.endDate).toLocaleDateString('ru-RU')}` : ''}
+                            {isOddEven ? ' · Двухнедельное' : ''}{(version as any).institutionType && (version as any).institutionType !== 'school' ? ` · ${terms.label}` : ''}
+                        </Typography>
+                    </Box>
                 </>
             )}
         </Container>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     AppBar, Toolbar, Typography, Button, Box, IconButton,
     useMediaQuery, useTheme, Drawer, List, ListItem,
@@ -7,18 +7,21 @@ import {
 import {
     Logout, Menu as MenuIcon, AdminPanelSettings,
     Dashboard as DashboardIcon, Assessment, Category,
-    AccountCircle, Event as EventIcon, CalendarMonth, Close,
+    AccountCircle, Event as EventIcon, CalendarMonth, Close, People, Brightness4, Brightness7,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../hooks/useRedux';
 import { logout } from '../../store/slices/authSlice';
 import { authService } from '../../services/auth.service';
 import NotificationBell from '../notifications/NotificationBell';
+import { useColorMode } from '../../theme/colorMode';
 
 const Header: React.FC = () => {
     const { user } = useAppSelector((state) => state.auth);
     const dispatch = useAppDispatch();
     const navigate = useNavigate();
+    const [pendingCount, setPendingCount] = useState(0);
+    const colorMode = useColorMode();
     const location = useLocation();
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -33,12 +36,22 @@ const Header: React.FC = () => {
     const isActive = (p: string) => location.pathname.startsWith(p);
     const go = (p: string) => { navigate(p); setDrawerOpen(false); };
 
+    useEffect(() => {
+        if (!user?.isAdmin) return;
+        let alive = true;
+        const load = () => authService.getPendingCount().then((r) => { if (alive) setPendingCount(r.count || 0); }).catch(() => {});
+        load();
+        const t = setInterval(load, 60000);
+        return () => { alive = false; clearInterval(t); };
+    }, [user]);
+
     const navItems = [
         { label: 'Задачи', icon: <DashboardIcon />, path: '/dashboard', show: true },
         { label: 'Мероприятия', icon: <EventIcon />, path: '/events', show: true },
         { label: 'Расписание', icon: <CalendarMonth />, path: '/schedule', show: true },
         { label: 'Статистика', icon: <Assessment />, path: '/statistics', show: !!user?.isAdmin },
         { label: 'Категории', icon: <Category />, path: '/admin/categories', show: !!user?.isAdmin },
+        { label: pendingCount > 0 ? `Пользователи (${pendingCount})` : 'Пользователи', icon: <People />, path: '/users', show: !!user?.isAdmin },
     ].filter(i => i.show);
 
     return (
@@ -82,6 +95,11 @@ const Header: React.FC = () => {
                     )}
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 'auto', flexShrink: 0 }}>
                         <NotificationBell />
+                        <Tooltip title={colorMode.mode === 'dark' ? 'Светлая тема' : 'Тёмная тема'}>
+                            <IconButton color="inherit" onClick={colorMode.toggle}>
+                                {colorMode.mode === 'dark' ? <Brightness7 /> : <Brightness4 />}
+                            </IconButton>
+                        </Tooltip>
                         {!isMobile && (
                             <IconButton color="inherit" onClick={() => navigate('/profile')} title="Профиль">
                                 <AccountCircle />

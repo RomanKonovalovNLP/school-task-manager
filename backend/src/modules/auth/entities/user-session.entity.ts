@@ -5,10 +5,12 @@ import {
     ManyToOne,
     CreateDateColumn,
     JoinColumn,
+    Index,
 } from 'typeorm';
 import { School } from '../../schools/entities/school.entity';
 
 @Entity('user_sessions')
+@Index(['schoolId', 'fullName'])
 export class UserSession {
     @PrimaryGeneratedColumn()
     id: number;
@@ -30,12 +32,12 @@ export class UserSession {
     isAdmin: boolean;
 
     @Column({
-        type: 'timestamp',
+        type: 'timestamptz',
         name: 'last_active',
         default: () => 'CURRENT_TIMESTAMP',
     })
     lastActive: Date;
 
-    @CreateDateColumn({ name: 'created_at' })
+    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
     createdAt: Date;
 }

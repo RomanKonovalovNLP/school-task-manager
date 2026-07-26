@@ -106,7 +106,10 @@ export class TeachersService {
         return this.availabilityRepo.save(availability);
     }
 
-    async getAvailability(teacherId: number): Promise<TeacherAvailability[]> {
+    /** ИСПРАВЛЕНО: добавлена проверка школы — раньше расписание доступности
+     *  любого учителя читалось по одному id, включая учителей другой школы */
+    async getAvailability(teacherId: number, schoolId: number): Promise<TeacherAvailability[]> {
+        await this.findOne(teacherId, schoolId); // бросит 404 для чужого учителя
         return this.availabilityRepo.find({
             where: { teacherId },
             order: { dayOfWeek: 'ASC', lessonNumber: 'ASC' },

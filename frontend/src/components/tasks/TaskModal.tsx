@@ -1,3 +1,4 @@
+import { useCelebration } from '../celebration/CelebrationProvider';
 import React, { useEffect, useState, useRef } from 'react';
 import {
     Dialog,
@@ -68,6 +69,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ onRefresh }) => {
     const { selectedTask } = useAppSelector((state) => state.tasks);
     const { user } = useAppSelector((state) => state.auth);
     const dispatch = useAppDispatch();
+    const celebrate = useCelebration();
 
     const [views, setViews] = useState<TaskView[]>([]);
     const [showViews, setShowViews] = useState(false);
@@ -159,6 +161,12 @@ const TaskModal: React.FC<TaskModalProps> = ({ onRefresh }) => {
             setCompleted(result.completed);
             // Перезагружаем статус для обновления списка выполнивших
             await loadCompletionStatus();
+            // ВАЖНО: сообщаем родителю — иначе список задач и план «Сегодня»
+            // остаются со старыми данными (и не срабатывает поздравление за весь день)
+            onRefresh();
+            if (result.completed) {
+                celebrate({ variant: 'complete', message: 'Поздравляем, задача выполнена!' });
+            }
         } catch (error: any) {
             alert(error.response?.data?.message || 'Ошибка при изменении статуса');
         } finally {
@@ -396,6 +404,14 @@ const TaskModal: React.FC<TaskModalProps> = ({ onRefresh }) => {
                                 </Button>
                             </Box>
 
+                            {selectedTask.restrictAttachments && (
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                                    {canViewDetails
+                                        ? 'Вложения пользователей видны только вам и администраторам. Ваши файлы видны всем.'
+                                        : 'Ваши вложения видны только создателю задачи и администраторам.'}
+                                </Typography>
+                            )}
+
                             {attachmentError && (
                                 <Alert severity="error" sx={{ mb: 1 }} onClose={() => setAttachmentError(null)}>
                                     {attachmentError}
@@ -455,15 +471,18 @@ const TaskModal: React.FC<TaskModalProps> = ({ onRefresh }) => {
                                 Категории:
                             </Typography>
                             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                                {selectedTask.assignees && selectedTask.assignees.length > 0 ? (
-                                    selectedTask.assignees.map((assignee) => (
-                                        <Chip key={assignee.id} label={assignee.assigneeCategory} />
-                                    ))
-                                ) : (
-                                    selectedTask.assigneeCategories?.map((category) => (
-                                        <Chip key={category} label={category} />
-                                    ))
-                                )}
+                                {(selectedTask.assigneeCategories && selectedTask.assigneeCategories.length > 0
+                                    ? selectedTask.assigneeCategories
+                                    : (selectedTask.assignees?.filter((a: any) => a.assigneeCategory).map((a: any) => a.assigneeCategory) || [])
+                                ).map((category: string) => (
+                                    <Chip key={`c-${category}`} label={category} />
+                                ))}
+                                {(selectedTask.assigneeUsers && selectedTask.assigneeUsers.length > 0
+                                    ? selectedTask.assigneeUsers
+                                    : (selectedTask.assignees?.filter((a: any) => a.assigneeUser).map((a: any) => a.assigneeUser) || [])
+                                ).map((u: string) => (
+                                    <Chip key={`u-${u}`} icon={<Person sx={{ fontSize: '0.9rem' }} />} label={u} color="secondary" variant="outlined" />
+                                ))}
                             </Box>
                         </Box>
 
@@ -483,24 +502,34 @@ const TaskModal: React.FC<TaskModalProps> = ({ onRefresh }) => {
                                             Просмотры: {selectedTask.viewsCount}
                                         </Typography>
                                     </Box>
-                                    {!showViews && (
+                                    {!showViews ? (
                                         <Button size="small" onClick={loadViews}>
                                             Показать просмотревших
+                                        </Button>
+                                    ) : (
+                                        <Button size="small" onClick={() => setShowViews(false)}>
+                                            Скрыть
                                         </Button>
                                     )}
                                 </Box>
 
-                                {showViews && views.length > 0 && (
-                                    <List dense>
-                                        {views.map((view, index) => (
-                                            <ListItem key={index}>
-                                                <ListItemText
-                                                    primary={view.viewerName}
-                                                    secondary={formatDateTime(view.viewedAt)}
-                                                />
-                                            </ListItem>
-                                        ))}
-                                    </List>
+                                {showViews && (
+                                    views.length > 0 ? (
+                                        <List dense>
+                                            {views.map((view, index) => (
+                                                <ListItem key={index}>
+                                                    <ListItemText
+                                                        primary={view.viewerName}
+                                                        secondary={formatDateTime(view.viewedAt)}
+                                                    />
+                                                </ListItem>
+                                            ))}
+                                        </List>
+                                    ) : (
+                                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                                            Пока никто не просмотрел
+                                        </Typography>
+                                    )
                                 )}
                             </Box>
                         )}

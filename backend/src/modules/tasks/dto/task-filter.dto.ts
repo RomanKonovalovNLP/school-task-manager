@@ -13,8 +13,8 @@ export class TaskFilterDto {
     category?: string;
 
     @IsOptional()
-    @IsEnum(TaskPriority)
-    priority?: TaskPriority;
+    @IsString()
+    priority?: string; // urgent | medium | low | overdue | important
 
     @IsOptional()
     @IsString()

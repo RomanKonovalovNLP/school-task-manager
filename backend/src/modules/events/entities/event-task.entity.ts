@@ -38,7 +38,7 @@ export class EventTask {
     @Column({ type: 'text', nullable: true })
     description: string;
 
-    @Column({ type: 'timestamp', nullable: true })
+    @Column({ type: 'timestamptz', nullable: true })
     deadline: Date | null;
 
     @Column({ name: 'creator_name', length: 255 })
@@ -50,13 +50,13 @@ export class EventTask {
     @Column({ name: 'completed_by', length: 255, nullable: true })
     completedBy: string;
 
-    @Column({ name: 'completed_at', type: 'timestamp', nullable: true })
+    @Column({ name: 'completed_at', type: 'timestamptz', nullable: true })
     completedAt: Date;
 
-    @CreateDateColumn({ name: 'created_at' })
+    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
     createdAt: Date;
 
-    @UpdateDateColumn({ name: 'updated_at' })
+    @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
     updatedAt: Date;
 
     @OneToMany(() => EventTaskCompletion, (completion) => completion.eventTask, { cascade: true })

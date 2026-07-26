@@ -13,6 +13,7 @@ import {
     HttpStatus,
 } from '@nestjs/common';
 import { SchoolAuthGuard } from '../../../common/guards/school-auth.guard';
+import { AdminGuard } from '../../../common/guards/admin.guard';
 import { WorkloadsService } from '../services/workloads.service';
 import { CreateWorkloadDto, UpdateWorkloadDto } from '../dto/schedule.dto';
 
@@ -38,6 +39,7 @@ export class WorkloadsController {
         return this.workloadsService.findOne(id, req.user.schoolId);
     }
 
+    @UseGuards(AdminGuard)
     @Post('version/:versionId')
     async create(
         @Param('versionId', ParseIntPipe) versionId: number,
@@ -47,6 +49,7 @@ export class WorkloadsController {
         return this.workloadsService.create(versionId, dto, req.user.schoolId);
     }
 
+    @UseGuards(AdminGuard)
     @Put(':id')
     async update(
         @Param('id', ParseIntPipe) id: number,
@@ -56,6 +59,7 @@ export class WorkloadsController {
         return this.workloadsService.update(id, dto, req.user.schoolId);
     }
 
+    @UseGuards(AdminGuard)
     @Delete(':id')
     @HttpCode(HttpStatus.NO_CONTENT)
     async remove(@Param('id', ParseIntPipe) id: number, @Request() req) {

@@ -25,6 +25,6 @@ export class FilterCategory {
     @Column({ type: 'varchar', length: 100, name: 'category_name' })
     categoryName: string;
 
-    @CreateDateColumn({ name: 'created_at' })
+    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
     createdAt: Date;
 }

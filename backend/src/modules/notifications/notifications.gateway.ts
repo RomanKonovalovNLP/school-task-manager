@@ -17,6 +17,7 @@ interface AuthenticatedSocket extends Socket {
         id: number;
         schoolId: number;
         fullName: string;
+        isAdmin: boolean;
         categories: string[];
     };
 }
@@ -88,6 +89,9 @@ export class NotificationsGateway
                 });
             }
 
+            // Персональная комната пользователя (для адресных уведомлений)
+            client.join(`school_${user.schoolId}_user_${user.fullName}`);
+
             // Обновляем Map комнат
             if (!this.schoolRooms.has(user.schoolId)) {
                 this.schoolRooms.set(user.schoolId, new Set());
@@ -98,15 +102,16 @@ export class NotificationsGateway
                 `User ${user.fullName} connected to school ${user.schoolId} with categories: ${user.categories?.join(', ')}`,
             );
 
-            // Отправляем накопленные уведомления
-            const unreadNotifications =
-                await this.notificationsService.getUnreadNotifications(
-                    user.id,
+            // Отправляем накопленные уведомления: непрочитанные + прочитанные за сутки,
+            // чтобы после перезагрузки страницы важное не исчезало из списка
+            const recentNotifications =
+                await this.notificationsService.getRecentNotifications(
                     user.schoolId,
+                    user.fullName,
                     user.categories,
                 );
 
-            client.emit('unread_notifications', unreadNotifications);
+            client.emit('unread_notifications', recentNotifications);
         } catch (error) {
             this.logger.error('Connection error:', error);
             client.disconnect();
@@ -140,9 +145,22 @@ export class NotificationsGateway
     ) {
         if (!client.user) return;
 
-        await this.notificationsService.markAsRead(notificationId, client.user.id);
-
-        client.emit('notification_read', { notificationId });
+        // ИСПРАВЛЕНО (#5): передаём schoolId и категории — без них проверка
+        // принадлежности в markAsRead не выполнялась, и любой пользователь
+        // мог пометить прочитанным чужое уведомление по ID.
+        try {
+            await this.notificationsService.markAsRead(
+                notificationId,
+                client.user.schoolId,
+                client.user.fullName,
+                client.user.categories,
+            );
+            client.emit('notification_read', { notificationId });
+        } catch (error) {
+            this.logger.warn(
+                `mark_as_read denied for user ${client.user.fullName}, notification ${notificationId}`,
+            );
+        }
     }
 
     @SubscribeMessage('mark_all_as_read')
@@ -150,8 +168,8 @@ export class NotificationsGateway
         if (!client.user) return;
 
         await this.notificationsService.markAllAsRead(
-            client.user.id,
             client.user.schoolId,
+            client.user.fullName,
             client.user.categories,
         );
 
@@ -224,6 +242,18 @@ export class NotificationsGateway
         this.sendUniqueNotificationToCategories(schoolId, categories, notification);
     }
 
+    /** Адресные уведомления конкретным пользователям (по ФИО) через их персональные комнаты. */
+    sendNotificationToUsers(schoolId: number, users: string[], notification: any) {
+        if (!this.isServerInitialized || !this.server) return;
+        try {
+            users.forEach((u) => {
+                this.server.to(`school_${schoolId}_user_${u}`).emit('new_notification', notification);
+            });
+        } catch (error) {
+            this.logger.error('Error sending notification to users:', error);
+        }
+    }
+
     /**
      * Отправка уведомления конкретному пользователю
      */
@@ -261,6 +291,45 @@ export class NotificationsGateway
     }
 
     /**
+     * ИСПРАВЛЕНО (#4): может ли пользователь видеть задачу.
+     * Личные — только создателю; categoryOnly — админам, создателю
+     * и пользователям с пересекающимися категориями.
+     */
+    private canUserSeeTask(user: any, task: any): boolean {
+        if (task?.isPersonal) {
+            return user.fullName === task.creatorName;
+        }
+        if (task?.categoryOnly) {
+            if (user.isAdmin || user.fullName === task.creatorName) return true;
+            const taskCategories: string[] = task.assigneeCategories || [];
+            return (user.categories || []).some((c: string) => taskCategories.includes(c));
+        }
+        return true;
+    }
+
+    /**
+     * ИСПРАВЛЕНО (#4): личные и categoryOnly-задачи не рассылаются
+     * всей школе — только тем, кто имеет право их видеть.
+     */
+    private emitTaskEventFiltered(schoolId: number, eventName: string, task: any) {
+        // Обычные задачи — всей школе, как раньше
+        if (!task?.isPersonal && !task?.categoryOnly) {
+            this.server.to(`school_${schoolId}`).emit(eventName, task);
+            return;
+        }
+
+        const schoolSockets = this.schoolRooms.get(schoolId);
+        if (!schoolSockets) return;
+
+        for (const socketId of schoolSockets) {
+            const user = this.connectedUsers.get(socketId);
+            if (user && this.canUserSeeTask(user, task)) {
+                this.server.to(socketId).emit(eventName, task);
+            }
+        }
+    }
+
+    /**
      * Broadcast изменений в таске (для синхронизации canvas)
      */
     broadcastTaskUpdate(schoolId: number, taskUpdate: any) {
@@ -270,7 +339,7 @@ export class NotificationsGateway
         }
 
         try {
-            this.server.to(`school_${schoolId}`).emit('task_updated', taskUpdate);
+            this.emitTaskEventFiltered(schoolId, 'task_updated', taskUpdate);
             this.logger.log(`Broadcasted task update to school ${schoolId}`);
         } catch (error) {
             this.logger.error('Error broadcasting task update:', error);
@@ -304,7 +373,7 @@ export class NotificationsGateway
         }
 
         try {
-            this.server.to(`school_${schoolId}`).emit('task_created', task);
+            this.emitTaskEventFiltered(schoolId, 'task_created', task);
             this.logger.log(`Broadcasted task created to school ${schoolId}`);
         } catch (error) {
             this.logger.error('Error broadcasting task created:', error);

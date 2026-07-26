@@ -30,9 +30,13 @@ export class UserProfile {
     @Column({ type: 'varchar', length: 255, name: 'full_name' })
     fullName: string;
 
-    @CreateDateColumn({ name: 'created_at' })
+    // Подтверждён ли вход администратором (для новых гостей). Существующие — true.
+    @Column({ type: 'boolean', default: true })
+    approved: boolean;
+
+    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
     createdAt: Date;
 
-    @UpdateDateColumn({ name: 'updated_at' })
+    @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
     updatedAt: Date;
 }

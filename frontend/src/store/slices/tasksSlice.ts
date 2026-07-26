@@ -7,9 +7,12 @@ interface TasksState {
     error: string | null;
     selectedTask: Task | null;
     filters: {
-        category: string;
-        priority: string;
+        category: string[];
+        priority: string[];
         creatorName: string;
+        // Скрытие задач в списке (считается на клиенте)
+        hideCompleted: boolean;
+        hideOverdue: boolean;
     };
 }
 
@@ -19,9 +22,11 @@ const initialState: TasksState = {
     error: null,
     selectedTask: null,
     filters: {
-        category: '',
-        priority: '',
+        category: [],
+        priority: [],
         creatorName: '',
+        hideCompleted: false,
+        hideOverdue: false,
     },
 };
 
@@ -64,9 +69,11 @@ const tasksSlice = createSlice({
         },
         clearFilters: (state) => {
             state.filters = {
-                category: '',
-                priority: '',
+                category: [],
+                priority: [],
                 creatorName: '',
+                hideCompleted: false,
+                hideOverdue: false,
             };
         },
     },

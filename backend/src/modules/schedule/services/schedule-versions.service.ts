@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ScheduleVersion, ScheduleStatus } from '../entities/schedule-version.entity';
+import { ScheduleVersion, ScheduleStatus, ScheduleVersionType } from '../entities/schedule-version.entity';
 import { ScheduleLesson } from '../entities/schedule-lesson.entity';
 import { Workload } from '../entities/workload.entity';
 import { BellSchedule } from '../entities/bell-schedule.entity';
@@ -23,11 +23,14 @@ export class ScheduleVersionsService {
         private conflictRepo: Repository<ScheduleConflict>,
     ) {}
 
-    async findAll(schoolId: number): Promise<ScheduleVersion[]> {
-        const versions = await this.versionRepo.find({
+    async findAll(schoolId: number, isAdmin: boolean = true): Promise<ScheduleVersion[]> {
+        let versions = await this.versionRepo.find({
             where: { schoolId },
             order: { createdAt: 'DESC' },
         });
+
+        // Педагогам (не админам) показываем только опубликованные версии
+        if (!isAdmin) versions = versions.filter(v => v.status === ScheduleStatus.PUBLISHED);
 
         if (versions.length === 0) return versions;
 
@@ -134,13 +137,14 @@ export class ScheduleVersionsService {
         await this.versionRepo.remove(version);
     }
 
-    async copy(id: number, name: string, schoolId: number): Promise<ScheduleVersion> {
+    async copy(id: number, name: string, schoolId: number, type?: ScheduleVersionType): Promise<ScheduleVersion> {
         const original = await this.findOne(id, schoolId);
 
         const newVersion = this.versionRepo.create({
             ...original,
             id: undefined,
             name,
+            type: type ?? original.type,
             status: ScheduleStatus.DRAFT,
             isActive: false,
             copiedFromId: id,
@@ -179,6 +183,13 @@ export class ScheduleVersionsService {
         }
 
         version.status = ScheduleStatus.PUBLISHED;
+        return this.versionRepo.save(version);
+    }
+
+    /** Снять с публикации — возвращает версию в черновик, скрывая её от педагогов. */
+    async unpublish(id: number, schoolId: number): Promise<ScheduleVersion> {
+        const version = await this.findOne(id, schoolId);
+        version.status = ScheduleStatus.DRAFT;
         return this.versionRepo.save(version);
     }
 

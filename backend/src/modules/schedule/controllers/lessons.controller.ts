@@ -14,6 +14,7 @@ import {
     HttpCode,
 } from '@nestjs/common';
 import { SchoolAuthGuard } from '../../../common/guards/school-auth.guard';
+import { AdminGuard } from '../../../common/guards/admin.guard';
 import { LessonsService } from '../services/lessons.service';
 import { ScheduleValidatorService } from '../services/schedule-validator.service';
 import {
@@ -34,6 +35,7 @@ export class LessonsController {
     /**
      * Добавить урок в расписание (из нагрузки)
      */
+    @UseGuards(AdminGuard)
     @Post()
     async create(
         @Body() dto: CreateLessonDto,
@@ -46,7 +48,7 @@ export class LessonsController {
             lessonNumber: dto.lessonNumber,
             weekType: dto.weekType,
             roomId: dto.roomId,
-        });
+        }, req.user.schoolId);
 
         if (!validation.canPlace) {
             return {
@@ -70,6 +72,7 @@ export class LessonsController {
     /**
      * Переместить урок (drag & drop)
      */
+    @UseGuards(AdminGuard)
     @Put(':id/move')
     async move(
         @Param('id', ParseIntPipe) id: number,
@@ -112,6 +115,7 @@ export class LessonsController {
     /**
      * Обновить урок (кабинет, блокировка)
      */
+    @UseGuards(AdminGuard)
     @Put(':id')
     async update(
         @Param('id', ParseIntPipe) id: number,
@@ -124,6 +128,7 @@ export class LessonsController {
     /**
      * Удалить урок из расписания (вернуть в нагрузку)
      */
+    @UseGuards(AdminGuard)
     @Delete(':id')
     @HttpCode(HttpStatus.NO_CONTENT)
     async remove(
@@ -136,6 +141,7 @@ export class LessonsController {
     /**
      * Заблокировать/разблокировать урок
      */
+    @UseGuards(AdminGuard)
     @Post(':id/toggle-lock')
     async toggleLock(
         @Param('id', ParseIntPipe) id: number,
@@ -147,12 +153,13 @@ export class LessonsController {
     /**
      * Проверить возможность размещения урока
      */
+    @UseGuards(AdminGuard)
     @Post('check-placement')
     async checkPlacement(
         @Body() dto: CheckPlacementDto,
         @Request() req,
     ) {
-        const result = await this.validatorService.checkPlacement(dto);
+        const result = await this.validatorService.checkPlacement(dto, req.user.schoolId);
 
         // Если нельзя разместить, предлагаем альтернативы
         if (!result.canPlace) {
@@ -172,6 +179,7 @@ export class LessonsController {
     /**
      * Получить доступные слоты для нагрузки
      */
+    @UseGuards(AdminGuard)
     @Get('available-slots/:workloadId')
     async getAvailableSlots(
         @Param('workloadId', ParseIntPipe) workloadId: number,
@@ -183,6 +191,7 @@ export class LessonsController {
     /**
      * Получить информацию о слоте (что там сейчас)
      */
+    @UseGuards(AdminGuard)
     @Get('slot-info')
     async getSlotInfo(
         @Query('versionId', ParseIntPipe) versionId: number,

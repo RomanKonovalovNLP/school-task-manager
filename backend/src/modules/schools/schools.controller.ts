@@ -1,6 +1,7 @@
 import { Controller, Post, Get, ForbiddenException, UseGuards } from '@nestjs/common';
 import { SchoolsService } from './schools.service';
 import { SchoolAuthGuard } from '../../common/guards/school-auth.guard';
+import { AdminGuard } from '../../common/guards/admin.guard';
 
 @Controller('schools')
 export class SchoolsController {
@@ -12,7 +13,7 @@ export class SchoolsController {
      * M12: Добавлен guard + проверка NODE_ENV
      */
     @Post('seed')
-    @UseGuards(SchoolAuthGuard)
+    @UseGuards(SchoolAuthGuard, AdminGuard)
     async seedData() {
         // Проверяем что мы не в production
         if (process.env.NODE_ENV === 'production') {
@@ -27,8 +28,11 @@ export class SchoolsController {
     /**
      * Получить информацию о школе
      * GET /schools/info
+     * ИСПРАВЛЕНО: эндпоинт был полностью открыт и отдавал имена администраторов
+     * любому анониму — теперь только для авторизованного администратора
      */
     @Get('info')
+    @UseGuards(SchoolAuthGuard, AdminGuard)
     async getInfo() {
         return this.schoolsService.getSchoolInfo();
     }

@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ПланТакт — шаблон маскота (совёнок).
+  Каждая подвижная часть вынесена в отдельную <g id="...">.
+  Точки опоры для анимации указаны в атрибуте data-pivot="x y"
+  (это transform-origin для вращения/сжатия соответствующей группы).
+  Правила для дизайнера:
+   - сохраняйте разбиение на группы и их id;
+   - у крыльев и век сохраняйте точки опоры (data-pivot);
+   - только плоские заливки, без градиентов/теней/растра;
+   - фон прозрачный; общий viewBox можно оставить 200 x 210.
+  Палитра: тело #58cc02, тень тела/крылья #46a302, живот #d7ffb8,
+           клюв/лапки #ff9600, зрачки #3a3a3a, щёки #ff8fa3, сияние #eaffd6.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 210" width="200" height="210" role="img" aria-labelledby="t d">
+  <title id="t">Совёнок-маскот ПланТакт</title>
+  <desc id="d">Персонаж-совёнок с раздельными слоями для анимации: тело, крылья, глаза, веки, клюв, лапки, сияние.</desc>
+
+  <!-- Вся сова целиком: pop-in (пружинка) + покачивание. Опора — низ по центру (прыжок «от пола»). -->
+  <g id="owl" data-pivot="100 190" data-anim="pop-in + bob">
+
+    <!-- Фоновое сияние: пульсация масштаба. Опора — центр. -->
+    <circle id="glow" data-pivot="100 110" data-anim="pulse" cx="100" cy="110" r="92" fill="#eaffd6"/>
+
+    <!-- Лапки (статичные) -->
+    <g id="feet" fill="none" stroke="#ff9600" stroke-width="5" stroke-linecap="round">
+      <path d="M78 188 q-4 12 -14 12 M78 188 q0 13 0 15 M78 188 q4 12 12 12"/>
+      <path d="M122 188 q-4 12 -12 12 M122 188 q0 13 0 15 M122 188 q4 12 14 12"/>
+    </g>
+
+    <!-- Ушки-кисточки (статичные) -->
+    <g id="earTufts" fill="#46a302">
+      <path d="M62 44 L74 74 L50 70 Z"/>
+      <path d="M138 44 L126 74 L150 70 Z"/>
+    </g>
+
+    <!-- Тело и живот -->
+    <ellipse id="body"  cx="100" cy="112" rx="66" ry="72" fill="#58cc02"/>
+    <ellipse id="belly" cx="100" cy="126" rx="42" ry="50" fill="#d7ffb8"/>
+
+    <!-- Левое крыло: махание вращением. Опора — плечо (46 96). Диапазон ~ +6°..-26°. -->
+    <g id="wingLeft" data-pivot="46 96" data-anim="wave">
+      <ellipse cx="40" cy="118" rx="16" ry="34" fill="#46a302"/>
+    </g>
+    <!-- Правое крыло: зеркально. Опора — плечо (154 96). Диапазон ~ -6°..+26°. -->
+    <g id="wingRight" data-pivot="154 96" data-anim="wave">
+      <ellipse cx="160" cy="118" rx="16" ry="34" fill="#46a302"/>
+    </g>
+
+    <!-- Глаза -->
+    <g id="eyes">
+      <circle id="eyeWhiteL" cx="76"  cy="92" r="27" fill="#ffffff" stroke="#46a302" stroke-width="3"/>
+      <circle id="eyeWhiteR" cx="124" cy="92" r="27" fill="#ffffff" stroke="#46a302" stroke-width="3"/>
+
+      <!-- Зрачки: лёгкое смещение по X (взгляд по сторонам). Опора — центр зрачка. -->
+      <circle id="pupilL" data-pivot="76 94"  data-anim="look" cx="76"  cy="94" r="12" fill="#3a3a3a"/>
+      <circle id="pupilR" data-pivot="124 94" data-anim="look" cx="124" cy="94" r="12" fill="#3a3a3a"/>
+
+      <!-- Блики (статичные) -->
+      <circle id="glintL" cx="81"  cy="89" r="4" fill="#ffffff"/>
+      <circle id="glintR" cx="129" cy="89" r="4" fill="#ffffff"/>
+
+      <!-- Веки для моргания: сжатие по вертикали scaleY 0->1. Опора — центр глаза. Цвет = цвет тела. -->
+      <rect id="lidL" data-pivot="76 92"  data-anim="blink" x="49" y="65" width="54" height="27" rx="13" fill="#58cc02"/>
+      <rect id="lidR" data-pivot="124 92" data-anim="blink" x="97" y="65" width="54" height="27" rx="13" fill="#58cc02"/>
+    </g>
+
+    <!-- Щёчки (статичные) -->
+    <g id="cheeks" fill="#ff8fa3" opacity="0.55">
+      <circle cx="60"  cy="118" r="8"/>
+      <circle cx="140" cy="118" r="8"/>
+    </g>
+
+    <!-- Клюв (статичный) -->
+    <path id="beak" d="M100 104 L112 116 L100 126 L88 116 Z" fill="#ff9600"/>
+
+  </g>
+</svg>

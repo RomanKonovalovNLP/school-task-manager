@@ -47,6 +47,6 @@ export class EventAttachment {
     @Column({ name: 'uploader_name', length: 255 })
     uploaderName: string;
 
-    @CreateDateColumn({ name: 'uploaded_at' })
+    @CreateDateColumn({ name: 'uploaded_at', type: 'timestamptz' })
     uploadedAt: Date;
 }

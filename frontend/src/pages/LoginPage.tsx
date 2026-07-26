@@ -17,6 +17,17 @@ import { loginStart, loginSuccess, loginFailure } from '../store/slices/authSlic
 import { authService } from '../services/auth.service';
 import RoleSelectionDialog from '../components/auth/RoleSelectionDialog';
 
+// Всегда приводим ошибку к строке — иначе объект/массив из ответа сервера
+// уронит рендер Alert (нельзя рисовать объект как React-child → белый экран).
+const extractLoginError = (err: any): string => {
+    const m = err?.response?.data?.message;
+    if (typeof m === 'string' && m.trim()) return m;
+    if (Array.isArray(m)) return m.filter(Boolean).join(', ');
+    if (m && typeof m === 'object' && typeof m.message === 'string') return m.message;
+    if (err && !err.response) return 'Не удалось связаться с сервером. Проверьте подключение.';
+    return 'Неверный логин или пароль.';
+};
+
 const LoginPage: React.FC = () => {
     const [tabValue, setTabValue] = useState(0);
     const [fullName, setFullName] = useState('');
@@ -53,9 +64,6 @@ const LoginPage: React.FC = () => {
         // ИСПРАВЛЕНИЕ: Проверяем категории и показываем диалог для новых пользователей
         const hasCategories = response.categories && response.categories.length > 0;
 
-        console.log('Login response categories:', response.categories);
-        console.log('Has categories:', hasCategories);
-
         if (!hasCategories) {
             setIsNewUser(true);
             setShowRoleDialog(true);
@@ -75,10 +83,15 @@ const LoginPage: React.FC = () => {
                 fullName,
                 schoolPassword,
             });
+            if (response?.pendingApproval) {
+                const msg = response.message || 'Ваш вход ожидает подтверждения администратором школы.';
+                setError(msg);
+                dispatch(loginFailure(msg));
+                return;
+            }
             await handleLoginSuccess(response);
         } catch (err: any) {
-            const errorMessage =
-                err.response?.data?.message || 'Ошибка входа. Проверьте данные.';
+            const errorMessage = extractLoginError(err);
             setError(errorMessage);
             dispatch(loginFailure(errorMessage));
         } finally {
@@ -100,8 +113,7 @@ const LoginPage: React.FC = () => {
             });
             await handleLoginSuccess(response);
         } catch (err: any) {
-            const errorMessage =
-                err.response?.data?.message || 'Ошибка входа. Проверьте данные.';
+            const errorMessage = extractLoginError(err);
             setError(errorMessage);
             dispatch(loginFailure(errorMessage));
         } finally {
@@ -231,20 +243,11 @@ const LoginPage: React.FC = () => {
                                 </Button>
                             </form>
                         )}
-
-                        <Box sx={{ mt: 3 }}>
-                            <Typography variant="caption" color="text.secondary" align="center" display="block">
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary" align="center" display="block">
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary" align="center" display="block">
-                            </Typography>
-                        </Box>
                     </Paper>
                 </Box>
             </Container>
 
-            {/* ИСПРАВЛЕНИЕ: Диалог выбора ролей */}
+            {/* Диалог выбора ролей */}
             <RoleSelectionDialog
                 open={showRoleDialog}
                 onClose={handleRoleDialogClose}

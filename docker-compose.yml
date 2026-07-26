@@ -7,15 +7,15 @@ services:
     container_name: plantakt_db
     restart: always
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: school_tasks
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?укажите POSTGRES_PASSWORD в файле .env рядом с docker-compose.yml}
+      POSTGRES_DB: ${POSTGRES_DB:-school_tasks}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
       - "127.0.0.1:5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -33,12 +33,14 @@ services:
     environment:
       DATABASE_HOST: db
       DATABASE_PORT: 5432
-      DATABASE_USER: postgres
-      DATABASE_PASSWORD: postgres
-      DATABASE_NAME: school_tasks
+      DATABASE_USER: ${POSTGRES_USER:-postgres}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?укажите POSTGRES_PASSWORD в файле .env}
+      DATABASE_NAME: ${POSTGRES_DB:-school_tasks}
       PORT: 3000
-      FRONTEND_URL: https://plantakt.ru
+      FRONTEND_URL: ${FRONTEND_URL:-https://plantakt.ru}
       NODE_ENV: production
+      # Ключ первичной установки супер-админа (в репозиторий не попадает)
+      SUPER_ADMIN_SETUP_KEY: ${SUPER_ADMIN_SETUP_KEY:?укажите SUPER_ADMIN_SETUP_KEY в файле .env}
     volumes:
       - uploads:/app/uploads
     ports:
@@ -50,7 +52,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        REACT_APP_API_URL: https://plantakt.ru/api
+        REACT_APP_API_URL: ${REACT_APP_API_URL:-https://plantakt.ru/api}
     container_name: plantakt_frontend
     restart: always
     depends_on:

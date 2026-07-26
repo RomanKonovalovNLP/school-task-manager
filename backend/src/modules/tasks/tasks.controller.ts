@@ -45,6 +45,65 @@ export class TasksController {
         return this.tasksService.findAll(user, filters);
     }
 
+    // ==================== Персональные группы задач (static routes перед :id) ====================
+
+    @Get('groups')
+    getGroups(@CurrentUser() user: any) {
+        return this.tasksService.getGroups(user);
+    }
+
+    @Post('groups')
+    createGroup(@Body('name') name: string, @CurrentUser() user: any) {
+        return this.tasksService.createGroup(user, name);
+    }
+
+    @Patch('groups/:id')
+    renameGroup(@Param('id', ParseIntPipe) id: number, @Body('name') name: string, @CurrentUser() user: any) {
+        return this.tasksService.renameGroup(user, id, name);
+    }
+
+    // ВАЖНО: более специфичный маршрут объявляем раньше groups/:id
+    @Delete('groups/items/:taskId')
+    removeFromGroup(@Param('taskId', ParseIntPipe) taskId: number, @CurrentUser() user: any) {
+        return this.tasksService.removeTaskFromGroup(user, taskId);
+    }
+
+    @Delete('groups/:id')
+    deleteGroup(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: any) {
+        return this.tasksService.deleteGroup(user, id);
+    }
+
+    @Post('groups/:id/items')
+    addToGroup(@Param('id', ParseIntPipe) id: number, @Body('taskId', ParseIntPipe) taskId: number, @CurrentUser() user: any) {
+        return this.tasksService.addTaskToGroup(user, id, taskId);
+    }
+
+    // ==================== Режим «Сегодня» (фокус) ====================
+
+    /** План на сегодня: срочные задачи автоматически + добавленные вручную */
+    @Get('focus/today')
+    getTodayFocus(@CurrentUser() user: any) {
+        return this.tasksService.getTodayFocus(user);
+    }
+
+    /** Задачи, которые можно добавить в план на сегодня */
+    @Get('focus/today/candidates')
+    getTodayFocusCandidates(@CurrentUser() user: any) {
+        return this.tasksService.getTodayFocusCandidates(user);
+    }
+
+    /** Добавить задачу в план на сегодня */
+    @Post('focus/today/:taskId')
+    addToTodayFocus(@Param('taskId', ParseIntPipe) taskId: number, @CurrentUser() user: any) {
+        return this.tasksService.addToTodayFocus(user, taskId);
+    }
+
+    /** Убрать задачу из плана (срочную убрать нельзя — вернётся пояснение) */
+    @Delete('focus/today/:taskId')
+    removeFromTodayFocus(@Param('taskId', ParseIntPipe) taskId: number, @CurrentUser() user: any) {
+        return this.tasksService.removeFromTodayFocus(user, taskId);
+    }
+
     // ==================== ИСПРАВЛЕНИЕ: Статические роуты ПЕРЕД динамическими ====================
 
     /**

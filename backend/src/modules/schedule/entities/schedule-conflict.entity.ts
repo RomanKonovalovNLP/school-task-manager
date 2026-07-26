@@ -72,6 +72,6 @@ export class ScheduleConflict {
     @Column({ name: 'is_resolved', type: 'boolean', default: false })
     isResolved: boolean;
 
-    @CreateDateColumn({ name: 'created_at' })
+    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
     createdAt: Date;
 }

@@ -14,8 +14,11 @@ import {
     AttachFile,
     Task,
     DateRange,
+    LocationOn,
+    Person,
 } from '@mui/icons-material';
 import { Event } from '../../services/events.service';
+import { getEventStatus, getEventColor, getEventStatusLabel } from '../../utils/eventHelpers';
 
 interface EventCardProps {
     event: Event;
@@ -64,13 +67,14 @@ const formatEventDateTime = (event: Event): string => {
 const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
     const startDate = new Date(event.startDate || event.eventDate);
     const endDate = event.endDate ? new Date(event.endDate) : null;
-    const now = new Date();
-    
-    // Определяем статус мероприятия
-    const isPast = endDate ? endDate < now : startDate < now;
-    const isOngoing = endDate && startDate <= now && endDate >= now;
-    const isToday = startDate.toDateString() === now.toDateString() || 
-                    (endDate && now >= startDate && now <= endDate);
+
+    // Определяем статус мероприятия (учитывает «весь день»: такое мероприятие
+    // считается прошедшим только после конца своего дня, а не сразу после полуночи)
+    const { isPast, isOngoing, isToday } = getEventStatus(event);
+    // Единая с задачами цветовая шкала: зелёный — завершено, красный — сегодня,
+    // оранжевый — на днях, синий — впереди
+    const eventColor = getEventColor(event);
+    const statusLabel = getEventStatusLabel(event);
     const isMultiDay = endDate && startDate.toDateString() !== endDate.toDateString();
 
     const tasksProgress = event.tasksCount
@@ -83,15 +87,8 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
             sx={{
                 cursor: 'pointer',
                 transition: 'all 0.2s',
-                opacity: isPast ? 0.7 : 1,
-                borderLeft: '4px solid',
-                borderLeftColor: isPast
-                    ? 'grey.400'
-                    : isOngoing
-                        ? 'success.main'
-                        : isToday
-                            ? 'warning.main'
-                            : 'primary.main',
+                opacity: isPast ? 0.75 : 1,
+                borderLeft: `4px solid ${eventColor}`,
                 '&:hover': {
                     transform: 'translateY(-2px)',
                     boxShadow: 4,
@@ -117,16 +114,21 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
                     {event.allDay && (
                         <Chip label="Весь день" size="small" variant="outlined" />
                     )}
-                    {isOngoing && (
-                        <Chip label="Идёт сейчас" size="small" color="success" />
-                    )}
-                    {isToday && !isOngoing && !isPast && (
-                        <Chip label="Сегодня" size="small" color="warning" />
-                    )}
-                    {isPast && (
-                        <Chip label="Прошло" size="small" variant="outlined" />
-                    )}
+                    <Chip
+                        label={statusLabel}
+                        size="small"
+                        sx={{ backgroundColor: eventColor, color: '#fff', fontWeight: 'bold' }}
+                    />
                 </Box>
+
+                {event.location && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
+                        <LocationOn fontSize="small" color="action" />
+                        <Typography variant="body2" color="text.secondary" noWrap>
+                            {event.location}
+                        </Typography>
+                    </Box>
+                )}
 
                 {event.description && (
                     <Typography
@@ -164,10 +166,16 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
                             sx={{ height: 20, fontSize: 11 }}
                         />
                     )}
+                    {event.assigneeUsers?.slice(0, 3).map((u) => (
+                        <Chip key={`u-${u}`} icon={<Person sx={{ fontSize: '0.85rem' }} />} label={u} size="small" color="secondary" variant="outlined" sx={{ height: 20, fontSize: 11 }} />
+                    ))}
+                    {(event.assigneeUsers?.length || 0) > 3 && (
+                        <Chip label={`+${(event.assigneeUsers?.length || 0) - 3}`} size="small" color="secondary" variant="outlined" sx={{ height: 20, fontSize: 11 }} />
+                    )}
                 </Box>
 
                 {/* Прогресс задач */}
-                {event.tasksCount && event.tasksCount > 0 && (
+                {(event.tasksCount ?? 0) > 0 && (
                     <Box sx={{ mt: 1 }}>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
                             <Typography variant="caption" color="text.secondary">
@@ -191,7 +199,7 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
                     {event.creatorName}
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 1 }}>
-                    {event.attachmentsCount && event.attachmentsCount > 0 && (
+                    {(event.attachmentsCount ?? 0) > 0 && (
                         <Tooltip title={`${event.attachmentsCount} вложений`}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                 <AttachFile fontSize="small" color="action" />
@@ -199,7 +207,7 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
                             </Box>
                         </Tooltip>
                     )}
-                    {event.tasksCount && event.tasksCount > 0 && (
+                    {(event.tasksCount ?? 0) > 0 && (
                         <Tooltip title={`${event.tasksCount} задач`}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                 <Task fontSize="small" color="action" />

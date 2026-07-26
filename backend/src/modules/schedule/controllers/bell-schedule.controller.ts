@@ -13,6 +13,7 @@ import {
     HttpStatus,
 } from '@nestjs/common';
 import { SchoolAuthGuard } from '../../../common/guards/school-auth.guard';
+import { AdminGuard } from '../../../common/guards/admin.guard';
 import { BellScheduleService } from '../services/bell-schedule.service';
 import { CreateBellScheduleDto } from '../dto/schedule.dto';
 
@@ -33,6 +34,7 @@ export class BellScheduleController {
     /**
      * Создать звонок
      */
+    @UseGuards(AdminGuard)
     @Post()
     async create(@Body() dto: CreateBellScheduleDto & { shift?: number }, @Request() req) {
         return this.bellScheduleService.create(dto, req.user.schoolId);
@@ -41,6 +43,7 @@ export class BellScheduleController {
     /**
      * Обновить звонок
      */
+    @UseGuards(AdminGuard)
     @Put(':id')
     async update(
         @Param('id', ParseIntPipe) id: number,
@@ -53,6 +56,7 @@ export class BellScheduleController {
     /**
      * Удалить звонок
      */
+    @UseGuards(AdminGuard)
     @Delete(':id')
     @HttpCode(HttpStatus.NO_CONTENT)
     async remove(@Param('id', ParseIntPipe) id: number, @Request() req) {

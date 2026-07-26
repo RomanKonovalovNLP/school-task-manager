@@ -22,10 +22,22 @@ export class AllExceptionsFilter implements ExceptionFilter {
                 ? exception.getStatus()
                 : HttpStatus.INTERNAL_SERVER_ERROR;
 
-        const message =
-            exception instanceof HttpException
-                ? exception.getResponse()
-                : 'Internal server error';
+        // ИСПРАВЛЕНИЕ: разворачиваем message в строку/массив, а не в объект.
+        // exception.getResponse() у HttpException часто возвращает объект
+        // { statusCode, message, error }. Если положить его целиком в поле
+        // message, фронтенд получит объект и падает при рендере (нельзя
+        // отрисовать объект как React-child) — бывает белый экран при ошибке входа.
+        let message: string | string[] = 'Internal server error';
+        if (exception instanceof HttpException) {
+            const res = exception.getResponse();
+            if (typeof res === 'string') {
+                message = res;
+            } else if (res && typeof res === 'object' && 'message' in (res as any)) {
+                message = (res as any).message;
+            } else {
+                message = exception.message;
+            }
+        }
 
         // Логируем ошибку
         this.logger.error(

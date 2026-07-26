@@ -39,6 +39,8 @@ import {
     Schedule,
     Settings,
     Home,
+    SwapHoriz,
+    Unpublished,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { scheduleService } from '../services/schedule.service';
@@ -57,6 +59,7 @@ const ScheduleDashboard: React.FC = () => {
     const [versions, setVersions] = useState<ScheduleVersion[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [typeFilter, setTypeFilter] = useState<'all' | ScheduleVersionType>('all');
 
     const getErrorMessage = (err: any, fallback: string): string => {
         const msg = err?.response?.data?.message ?? err?.message;
@@ -148,6 +151,24 @@ const ScheduleDashboard: React.FC = () => {
         }
     };
 
+    // Создать замены на основе шаблона
+    const handleCreateSubstitution = async () => {
+        if (!selectedVersion) return;
+        try {
+            const response = await scheduleService.copyVersion(
+                selectedVersion.id,
+                selectedVersion.name,
+                ScheduleVersionType.SUBSTITUTION,
+            );
+            const created = (response as any).version || response;
+            setVersions((prev) => [...prev, created]);
+            handleMenuClose();
+            navigate(`/schedule/editor/${created.id}`);
+        } catch (err: any) {
+            setError(getErrorMessage(err, 'Ошибка создания замен'));
+        }
+    };
+
     // Удаление версии
     const handleDelete = async () => {
         if (!selectedVersion) return;
@@ -193,6 +214,20 @@ const ScheduleDashboard: React.FC = () => {
         }
     };
 
+    // Снятие с публикации
+    const handleUnpublish = async () => {
+        if (!selectedVersion) return;
+        try {
+            const updated = await scheduleService.unpublishVersion(selectedVersion.id);
+            setVersions((prev) =>
+                prev.map((v) => (v.id === updated.id ? updated : v))
+            );
+            handleMenuClose();
+        } catch (err: any) {
+            setError(getErrorMessage(err, 'Ошибка снятия с публикации'));
+        }
+    };
+
     // Форматирование типа
     const getTypeLabel = (type: ScheduleVersionType) => {
         switch (type) {
@@ -207,21 +242,21 @@ const ScheduleDashboard: React.FC = () => {
         }
     };
 
-    // Форматирование статуса
+    // Форматирование статуса. Основное и статус публикации показываются вместе,
+    // поэтому у опубликованного основного расписания будет два чипа: Основное + Опубликовано.
     const getStatusChip = (status: ScheduleStatus, isActive: boolean) => {
+        const chips: React.ReactNode[] = [];
         if (isActive) {
-            return <Chip label="Активное" color="success" size="small" icon={<CheckCircle />} />;
+            chips.push(<Chip key="main" label="Основное" color="success" size="small" icon={<CheckCircle />} />);
         }
-        switch (status) {
-            case ScheduleStatus.DRAFT:
-                return <Chip label="Черновик" size="small" />;
-            case ScheduleStatus.PUBLISHED:
-                return <Chip label="Опубликовано" color="primary" size="small" />;
-            case ScheduleStatus.ARCHIVED:
-                return <Chip label="В архиве" size="small" variant="outlined" />;
-            default:
-                return null;
+        if (status === ScheduleStatus.PUBLISHED) {
+            chips.push(<Chip key="pub" label="Опубликовано" color="primary" size="small" />);
+        } else if (status === ScheduleStatus.ARCHIVED) {
+            chips.push(<Chip key="arch" label="В архиве" size="small" variant="outlined" />);
+        } else if (!isActive) {
+            chips.push(<Chip key="draft" label="Черновик" size="small" />);
         }
+        return <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>{chips}</Box>;
     };
 
     // Форматирование даты
@@ -229,6 +264,17 @@ const ScheduleDashboard: React.FC = () => {
         if (!dateStr) return '—';
         return new Date(dateStr).toLocaleDateString('ru-RU');
     };
+
+    // Группировка: сначала шаблоны, затем на период, затем замены; с учётом фильтра
+    const typeOrder: Record<string, number> = {
+        [ScheduleVersionType.TEMPLATE]: 0,
+        [ScheduleVersionType.PERIOD]: 1,
+        [ScheduleVersionType.SUBSTITUTION]: 2,
+    };
+    const visibleVersions = versions
+        .filter((v) => typeFilter === 'all' || v.type === typeFilter)
+        .slice()
+        .sort((a, b) => (typeOrder[a.type] ?? 9) - (typeOrder[b.type] ?? 9));
 
     if (loading) {
         return (
@@ -276,6 +322,25 @@ const ScheduleDashboard: React.FC = () => {
                 </Alert>
             )}
 
+            {/* Фильтр по типу */}
+            <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+                {([
+                    { v: 'all', label: 'Все' },
+                    { v: ScheduleVersionType.TEMPLATE, label: 'Шаблоны' },
+                    { v: ScheduleVersionType.PERIOD, label: 'На период' },
+                    { v: ScheduleVersionType.SUBSTITUTION, label: 'Замены' },
+                ] as { v: 'all' | ScheduleVersionType; label: string }[]).map((f) => (
+                    <Chip
+                        key={f.v}
+                        label={f.label}
+                        color={typeFilter === f.v ? 'primary' : 'default'}
+                        variant={typeFilter === f.v ? 'filled' : 'outlined'}
+                        onClick={() => setTypeFilter(f.v)}
+                        clickable
+                    />
+                ))}
+            </Box>
+
             {/* Таблица расписаний */}
             <TableContainer component={Paper}>
                 <Table>
@@ -291,7 +356,7 @@ const ScheduleDashboard: React.FC = () => {
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {versions.length === 0 ? (
+                        {visibleVersions.length === 0 ? (
                             <TableRow>
                                 <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
                                     <Typography color="text.secondary">
@@ -308,7 +373,7 @@ const ScheduleDashboard: React.FC = () => {
                                 </TableCell>
                             </TableRow>
                         ) : (
-                            versions.map((version) => (
+                            visibleVersions.map((version) => (
                                 <TableRow
                                     key={version.id}
                                     hover
@@ -320,7 +385,13 @@ const ScheduleDashboard: React.FC = () => {
                                             {version.name}
                                         </Typography>
                                     </TableCell>
-                                    <TableCell>{getTypeLabel(version.type)}</TableCell>
+                                    <TableCell>
+                                        {version.type === ScheduleVersionType.SUBSTITUTION ? (
+                                            <Chip size="small" color="secondary" icon={<SwapHoriz />} label={getTypeLabel(version.type)} />
+                                        ) : (
+                                            getTypeLabel(version.type)
+                                        )}
+                                    </TableCell>
                                     <TableCell>
                                         {version.weekType === WeekType.SINGLE ? 'Одна' : 'Чёт/Нечёт'}
                                         {' · '}
@@ -377,16 +448,28 @@ const ScheduleDashboard: React.FC = () => {
                     <ContentCopy fontSize="small" sx={{ mr: 1 }} />
                     Копировать
                 </MenuItem>
+                {selectedVersion?.type !== ScheduleVersionType.SUBSTITUTION && (
+                    <MenuItem onClick={handleCreateSubstitution}>
+                        <SwapHoriz fontSize="small" sx={{ mr: 1 }} />
+                        Создать замены
+                    </MenuItem>
+                )}
                 {selectedVersion?.status === ScheduleStatus.DRAFT && (
                     <MenuItem onClick={handlePublish}>
                         <Publish fontSize="small" sx={{ mr: 1 }} />
                         Опубликовать
                     </MenuItem>
                 )}
+                {selectedVersion?.status === ScheduleStatus.PUBLISHED && (
+                    <MenuItem onClick={handleUnpublish}>
+                        <Unpublished fontSize="small" sx={{ mr: 1 }} />
+                        Снять с публикации
+                    </MenuItem>
+                )}
                 {!selectedVersion?.isActive && (
                     <MenuItem onClick={handleActivate}>
                         <CheckCircle fontSize="small" sx={{ mr: 1 }} />
-                        Сделать активным
+                        Сделать основным
                     </MenuItem>
                 )}
                 <MenuItem onClick={handleDelete} sx={{ color: 'error.main' }}>
@@ -487,7 +570,7 @@ const ScheduleDashboard: React.FC = () => {
                     </FormControl>
 
                     {newVersion.institutionType !== 'school' && (() => {
-                        const t = getTerms(newVersion.institutionType);
+                            const t = getTerms(newVersion.institutionType);
                         return (
                             <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
                                 {t.lessonLabel} = {t.defaultLessonDuration} мин ({t.academicHoursPerLesson} акад. ч.) ·{' '}

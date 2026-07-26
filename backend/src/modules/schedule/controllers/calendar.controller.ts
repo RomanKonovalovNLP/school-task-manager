@@ -4,6 +4,7 @@ import {
 } from '@nestjs/common';
 import { CalendarService } from '../services/calendar.service';
 import { SchoolAuthGuard } from '../../../common/guards/school-auth.guard';
+import { AdminGuard } from '../../../common/guards/admin.guard';
 import { DayType } from '../entities/calendar-day.entity';
 
 @Controller('schedule/versions/:versionId/calendar')
@@ -40,6 +41,7 @@ export class CalendarController {
      * Сгенерировать календарь для периода
      * POST /schedule/versions/:versionId/calendar/generate
      */
+    @UseGuards(AdminGuard)
     @Post('generate')
     async generateCalendar(
         @Param('versionId', ParseIntPipe) versionId: number,
@@ -55,6 +57,7 @@ export class CalendarController {
      * Обновить один день
      * PUT /schedule/versions/:versionId/calendar/day
      */
+    @UseGuards(AdminGuard)
     @Put('day')
     async updateDay(
         @Param('versionId', ParseIntPipe) versionId: number,
@@ -70,6 +73,7 @@ export class CalendarController {
      * Массовое обновление дней
      * PUT /schedule/versions/:versionId/calendar/bulk
      */
+    @UseGuards(AdminGuard)
     @Put('bulk')
     async bulkUpdateDays(
         @Param('versionId', ParseIntPipe) versionId: number,
@@ -83,6 +87,7 @@ export class CalendarController {
      * Статистика календаря
      * GET /schedule/versions/:versionId/calendar/stats
      */
+    @UseGuards(AdminGuard)
     @Get('stats')
     async getStats(
         @Param('versionId', ParseIntPipe) versionId: number,

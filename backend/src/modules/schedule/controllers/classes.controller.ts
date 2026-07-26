@@ -13,6 +13,7 @@ import {
     HttpStatus,
 } from '@nestjs/common';
 import { SchoolAuthGuard } from '../../../common/guards/school-auth.guard';
+import { AdminGuard } from '../../../common/guards/admin.guard';
 import { ClassesService } from '../services/classes.service';
 import { CreateClassDto } from '../dto/schedule.dto';
 
@@ -32,11 +33,13 @@ export class ClassesController {
         return this.classesService.findOne(id, req.user.schoolId);
     }
 
+    @UseGuards(AdminGuard)
     @Post()
     async create(@Body() dto: CreateClassDto, @Request() req) {
         return this.classesService.create(dto, req.user.schoolId);
     }
 
+    @UseGuards(AdminGuard)
     @Put(':id')
     async update(
         @Param('id', ParseIntPipe) id: number,
@@ -46,12 +49,14 @@ export class ClassesController {
         return this.classesService.update(id, dto, req.user.schoolId);
     }
 
+    @UseGuards(AdminGuard)
     @Delete(':id')
     @HttpCode(HttpStatus.NO_CONTENT)
     async remove(@Param('id', ParseIntPipe) id: number, @Request() req) {
         await this.classesService.remove(id, req.user.schoolId);
     }
 
+    @UseGuards(AdminGuard)
     @Post(':id/groups')
     async addGroup(
         @Param('id', ParseIntPipe) id: number,
@@ -61,11 +66,13 @@ export class ClassesController {
         return this.classesService.addGroup(id, body.name, body.studentsCount, req.user.schoolId);
     }
 
+    @UseGuards(AdminGuard)
     @Delete('groups/:groupId')
     @HttpCode(HttpStatus.NO_CONTENT)
     async removeGroup(
         @Param('groupId', ParseIntPipe) groupId: number,
+        @Request() req,
     ) {
-        await this.classesService.removeGroup(groupId);
+        await this.classesService.removeGroup(groupId, req.user.schoolId);
     }
 }

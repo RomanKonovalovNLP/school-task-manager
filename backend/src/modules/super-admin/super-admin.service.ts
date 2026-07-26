@@ -3,6 +3,7 @@ import {
     BadRequestException,
     UnauthorizedException,
     NotFoundException,
+    ConflictException,
     OnModuleInit,
     Logger,
 } from '@nestjs/common';
@@ -220,7 +221,33 @@ export class SuperAdminService implements OnModuleInit {
         return result;
     }
 
+    /**
+     * ИСПРАВЛЕНО: пароль школы — идентификатор при входе (гость логинится
+     * только по паролю школы), поэтому пароли школ обязаны быть уникальными.
+     * Хэши bcrypt сравнить напрямую нельзя — проверяем кандидата
+     * против хэша каждой школы.
+     */
+    private async assertSchoolPasswordUnique(
+        password: string,
+        excludeSchoolId?: number,
+    ): Promise<void> {
+        const schools = await this.schoolRepository.find();
+        for (const school of schools) {
+            if (excludeSchoolId !== undefined && school.id === excludeSchoolId) {
+                continue;
+            }
+            const isSame = await bcrypt.compare(password, school.passwordHash);
+            if (isSame) {
+                throw new ConflictException(
+                    'Такой пароль уже используется другой школой. Придумайте другой пароль.',
+                );
+            }
+        }
+    }
+
     async createSchool(dto: CreateSchoolDto): Promise<School> {
+        await this.assertSchoolPasswordUnique(dto.password);
+
         const passwordHash = await bcrypt.hash(dto.password, 10);
 
         const school = this.schoolRepository.create({
@@ -243,6 +270,7 @@ export class SuperAdminService implements OnModuleInit {
         }
 
         if (dto.password) {
+            await this.assertSchoolPasswordUnique(dto.password, id);
             school.passwordHash = await bcrypt.hash(dto.password, 10);
         }
 

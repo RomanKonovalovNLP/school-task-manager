@@ -32,6 +32,14 @@ export class Event {
     @Column({ type: 'text', nullable: true })
     description: string;
 
+    // Место проведения (отдельный пункт, чтобы не писать в описании)
+    @Column({ name: 'location', type: 'varchar', length: 255, nullable: true })
+    location: string;
+
+    // Повторяемость (индикатор серии): none/daily/weekly/monthly
+    @Column({ name: 'recurrence', type: 'varchar', length: 20, nullable: true })
+    recurrence: string;
+
     @Column({ name: 'start_date', type: 'timestamptz' })
     startDate: Date;
 

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
+import { Repository, Between, In } from 'typeorm';
 import { Event } from './entities/event.entity';
 import { EventAssignee } from './entities/event-assignee.entity';
 import { EventAttachment } from './entities/event-attachment.entity';
@@ -107,41 +107,100 @@ export class EventsService {
         const startDate = new Date(dto.startDate);
         const endDate = dto.endDate ? new Date(dto.endDate) : null;
         const allDay = dto.allDay || false;
+        const durationMs = endDate ? endDate.getTime() - startDate.getTime() : 0;
 
-        const event = this.eventRepository.create({
-            schoolId: user.schoolId,
-            title: dto.title,
-            description: dto.description,
-            startDate,
-            endDate,
-            allDay,
-            eventDate: startDate,
-            creatorId: user.sessionId,
-            creatorName: user.fullName,
-        });
+        const rec = dto.recurrence && dto.recurrence !== 'none' ? dto.recurrence : null;
+        const starts = this.buildOccurrenceStarts(startDate, rec, dto.recurrenceUntil);
 
-        const savedEvent = await this.eventRepository.save(event);
-
-        if (dto.assigneeCategories && dto.assigneeCategories.length > 0) {
-            const assignees = dto.assigneeCategories.map(category =>
-                this.assigneeRepository.create({ eventId: savedEvent.id, assigneeCategory: category })
-            );
-            await this.assigneeRepository.save(assignees);
-
-            const message = `Новое мероприятие: "${dto.title}" - ${this.formatEventDate(savedEvent)}`;
-            const notifications = await this.notificationsService.createEventNotification(
-                user.schoolId, dto.assigneeCategories, savedEvent.id, NotificationType.NEW_EVENT, message,
-            );
-
-            if (notifications.length > 0) {
-                this.notificationsGateway.sendUniqueNotificationToCategories(
-                    user.schoolId, dto.assigneeCategories,
-                    { ...notifications[0], createdAt: new Date().toISOString() },
-                );
+        let firstEvent: Event | null = null;
+        for (const st of starts) {
+            const en = endDate ? new Date(st.getTime() + durationMs) : null;
+            const event = this.eventRepository.create({
+                schoolId: user.schoolId,
+                title: dto.title,
+                description: dto.description,
+                location: dto.location,
+                startDate: st,
+                endDate: en,
+                allDay,
+                eventDate: st,
+                recurrence: rec ?? undefined,
+                creatorId: user.sessionId,
+                creatorName: user.fullName,
+            });
+            const savedEvent = await this.eventRepository.save(event);
+            if (!firstEvent) firstEvent = savedEvent;
+            const cats = dto.assigneeCategories || [];
+            const usersList = dto.assigneeUsers || [];
+            if (cats.length > 0 || usersList.length > 0) {
+                const assignees = [
+                    ...cats.map((category) => this.assigneeRepository.create({ eventId: savedEvent.id, assigneeCategory: category })),
+                    ...usersList.map((u) => this.assigneeRepository.create({ eventId: savedEvent.id, assigneeUser: u })),
+                ];
+                await this.assigneeRepository.save(assignees);
             }
         }
 
-        return this.findOne(savedEvent.id, user);
+        const cats0 = dto.assigneeCategories || [];
+        const users0 = dto.assigneeUsers || [];
+        if (firstEvent && (cats0.length > 0 || users0.length > 0)) {
+            const suffix = starts.length > 1 ? ` (серия из ${starts.length})` : '';
+            const message = `Новое мероприятие: "${dto.title}" - ${this.formatEventDate(firstEvent)}${suffix}`;
+            // Персональные адресаты, не покрытые назначенными категориями (без дублей)
+            const users0eff = await this.notificationsService.filterUncoveredUsers(user.schoolId, users0, cats0);
+            let firstNotif: any = null;
+            if (cats0.length > 0) {
+                const notifications = await this.notificationsService.createEventNotification(user.schoolId, cats0, firstEvent.id, NotificationType.NEW_EVENT, message);
+                if (notifications.length > 0) firstNotif = notifications[0];
+            }
+            if (users0eff.length > 0) {
+                const un = await this.notificationsService.createUserEventNotification(user.schoolId, users0eff, firstEvent.id, NotificationType.NEW_EVENT, message);
+                if (!firstNotif && un.length > 0) firstNotif = un[0];
+            }
+            if (firstNotif) {
+                const payload = { ...firstNotif, createdAt: new Date().toISOString() };
+                if (cats0.length > 0) this.notificationsGateway.sendUniqueNotificationToCategories(user.schoolId, cats0, payload);
+                if (users0eff.length > 0) this.notificationsGateway.sendNotificationToUsers(user.schoolId, users0eff, payload);
+            }
+        }
+
+        return this.findOne(firstEvent!.id, user);
+    }
+
+    /**
+     * ИСПРАВЛЕНО (#8): месячный повтор считается от базовой даты с ограничением
+     * дня по длине месяца. Раньше setMonth(+1) от 31 января давал 2–3 марта
+     * (февраль пропускался, дата съезжала до конца серии).
+     */
+    private addMonthsClamped(base: Date, months: number): Date {
+        const d = new Date(base);
+        const day = base.getDate();
+        d.setDate(1);
+        d.setMonth(d.getMonth() + months);
+        const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+        d.setDate(Math.min(day, daysInMonth));
+        return d;
+    }
+
+    /** Даты начала повторов (включая базовую). Без даты окончания — 12 повторов, максимум 60. */
+    private buildOccurrenceStarts(base: Date, rec: string | null, untilStr?: string): Date[] {
+        if (!rec) return [base];
+        const starts: Date[] = [new Date(base)];
+        let until: Date | null = null;
+        if (untilStr) { until = new Date(untilStr); until.setHours(23, 59, 59, 999); }
+        let d = new Date(base);
+        while (starts.length < 60) {
+            let next: Date;
+            if (rec === 'daily') { next = new Date(d); next.setDate(next.getDate() + 1); }
+            else if (rec === 'weekly') { next = new Date(d); next.setDate(next.getDate() + 7); }
+            else if (rec === 'monthly') { next = this.addMonthsClamped(base, starts.length); }
+            else break;
+            if (until) { if (next.getTime() > until.getTime()) break; }
+            else if (starts.length >= 12) break;
+            starts.push(next);
+            d = next;
+        }
+        return starts;
     }
 
     async findAll(user: any): Promise<any[]> {
@@ -165,16 +224,49 @@ export class EventsService {
         return events.map(event => this.mapEventToResponse(event, user));
     }
 
-    async findByDate(user: any, date: string): Promise<any[]> {
-        const targetDate = new Date(date);
-        const startOfDay = new Date(targetDate); startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(targetDate); endOfDay.setHours(23, 59, 59, 999);
+    /**
+     * Мероприятия за конкретный день.
+     *
+     * ИСПРАВЛЕНО:
+     * 1) Границы дня строятся из компонентов строки даты, а не через new Date('YYYY-MM-DD')
+     *    (такая строка парсится как полночь UTC, и при отличии часового пояса сервера
+     *    от пояса пользователя мероприятие «на весь день» выпадало из выборки).
+     *    Если клиент передал свой сдвиг (tzOffsetMinutes из getTimezoneOffset), считаем
+     *    день именно в его часовом поясе.
+     * 2) Берём все мероприятия, ПЕРЕСЕКАЮЩИЕ этот день, а не только начавшиеся в нём —
+     *    иначе многодневные мероприятия не показывались в промежуточные дни.
+     */
+    async findByDate(user: any, date: string, tzOffsetMinutes?: number): Promise<any[]> {
+        const [y, m, d] = String(date).split('-').map(Number);
 
-        const events = await this.eventRepository.find({
-            where: { schoolId: user.schoolId, startDate: Between(startOfDay, endOfDay) },
-            relations: ['assignees', 'tasks'],
-            order: { startDate: 'ASC' },
-        });
+        let startOfDay: Date;
+        let endOfDay: Date;
+
+        if (y && m && d && typeof tzOffsetMinutes === 'number' && !Number.isNaN(tzOffsetMinutes)) {
+            // getTimezoneOffset() возвращает минуты, на которые локальное время отстаёт от UTC
+            // (для UTC+3 это -180), поэтому прибавляем сдвиг к UTC-полуночи.
+            const offsetMs = tzOffsetMinutes * 60 * 1000;
+            startOfDay = new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0) + offsetMs);
+            endOfDay = new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999) + offsetMs);
+        } else if (y && m && d) {
+            startOfDay = new Date(y, m - 1, d, 0, 0, 0, 0);
+            endOfDay = new Date(y, m - 1, d, 23, 59, 59, 999);
+        } else {
+            const target = new Date(date);
+            startOfDay = new Date(target); startOfDay.setHours(0, 0, 0, 0);
+            endOfDay = new Date(target); endOfDay.setHours(23, 59, 59, 999);
+        }
+
+        const events = await this.eventRepository
+            .createQueryBuilder('event')
+            .leftJoinAndSelect('event.assignees', 'assignees')
+            .leftJoinAndSelect('event.tasks', 'tasks')
+            .where('event.schoolId = :schoolId', { schoolId: user.schoolId })
+            .andWhere('event.startDate <= :endOfDay', { endOfDay })
+            .andWhere('COALESCE(event.endDate, event.startDate) >= :startOfDay', { startOfDay })
+            .orderBy('event.startDate', 'ASC')
+            .getMany();
+
         return events.map(event => this.mapEventToResponse(event, user));
     }
 
@@ -200,20 +292,22 @@ export class EventsService {
 
         if (dto.title !== undefined) event.title = dto.title;
         if (dto.description !== undefined) event.description = dto.description;
+        if (dto.location !== undefined) event.location = dto.location;
         if (dto.startDate !== undefined) { event.startDate = new Date(dto.startDate); event.eventDate = event.startDate; }
         if (dto.endDate !== undefined) { event.endDate = dto.endDate ? new Date(dto.endDate) : null; }
         if (dto.allDay !== undefined) event.allDay = dto.allDay;
 
         await this.eventRepository.save(event);
 
-        if (dto.assigneeCategories !== undefined) {
+        if (dto.assigneeCategories !== undefined || (dto as any).assigneeUsers !== undefined) {
             await this.assigneeRepository.delete({ eventId: event.id });
-            if (dto.assigneeCategories.length > 0) {
-                const assignees = dto.assigneeCategories.map(category =>
-                    this.assigneeRepository.create({ eventId: event.id, assigneeCategory: category })
-                );
-                await this.assigneeRepository.save(assignees);
-            }
+            const assignees = [
+                ...((dto.assigneeCategories || []).map((category) =>
+                    this.assigneeRepository.create({ eventId: event.id, assigneeCategory: category }))),
+                ...(((dto as any).assigneeUsers || []).map((u: string) =>
+                    this.assigneeRepository.create({ eventId: event.id, assigneeUser: u }))),
+            ];
+            if (assignees.length) await this.assigneeRepository.save(assignees);
         }
 
         const dateChanged =
@@ -221,15 +315,32 @@ export class EventsService {
             (dto.endDate !== undefined && (dto.endDate ? new Date(dto.endDate).getTime() : null) !== oldEndDate?.getTime());
 
         if (dateChanged) {
-            const categories = dto.assigneeCategories || event.assignees.map(a => a.assigneeCategory);
+            const categories = dto.assigneeCategories || event.assignees.filter((a: any) => a.assigneeCategory).map(a => a.assigneeCategory);
+            const users = (dto as any).assigneeUsers || event.assignees.filter((a: any) => a.assigneeUser).map((a: any) => a.assigneeUser);
             const message = `Изменена дата мероприятия: "${event.title}" - ${this.formatEventDate(event)}`;
-            const notifications = await this.notificationsService.createEventNotification(
-                user.schoolId, categories, event.id, NotificationType.EVENT_DATE_CHANGED, message,
-            );
-            if (notifications.length > 0) {
-                this.notificationsGateway.sendUniqueNotificationToCategories(
-                    user.schoolId, categories, { ...notifications[0], createdAt: new Date().toISOString() },
+            // Персональные адресаты, не покрытые назначенными категориями (чтобы не было дублей)
+            const usersEff = await this.notificationsService.filterUncoveredUsers(user.schoolId, users, categories);
+
+            if (categories.length > 0) {
+                const notifications = await this.notificationsService.createEventNotification(
+                    user.schoolId, categories, event.id, NotificationType.EVENT_DATE_CHANGED, message,
                 );
+                if (notifications.length > 0) {
+                    this.notificationsGateway.sendUniqueNotificationToCategories(
+                        user.schoolId, categories, { ...notifications[0], createdAt: new Date().toISOString() },
+                    );
+                }
+            }
+
+            if (usersEff.length > 0) {
+                const un = await this.notificationsService.createUserEventNotification(
+                    user.schoolId, usersEff, event.id, NotificationType.EVENT_DATE_CHANGED, message,
+                );
+                if (un && un.length > 0) {
+                    this.notificationsGateway.sendNotificationToUsers(
+                        user.schoolId, usersEff, { ...un[0], createdAt: new Date().toISOString() },
+                    );
+                }
             }
         }
 
@@ -249,14 +360,50 @@ export class EventsService {
             if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
         }
 
-        const categories = event.assignees.map(a => a.assigneeCategory);
+        // ИСПРАВЛЕНО (3 бага):
+        // 1) в categories попадали NULL от персональных назначений — такие уведомления
+        //    не видел никто (recipientCategory и recipientUser пустые);
+        // 2) персонально назначенным людям уведомление вообще не отправлялось;
+        // 3) уведомление создавалось с eventId удаляемого мероприятия и тут же
+        //    удалялось каскадом — до пользователей оно не доходило.
+        const categories = (event.assignees || [])
+            .filter((a: any) => a.assigneeCategory)
+            .map((a: any) => a.assigneeCategory as string);
+        const users = (event.assignees || [])
+            .filter((a: any) => a.assigneeUser)
+            .map((a: any) => a.assigneeUser as string);
+        const usersEff = await this.notificationsService.filterUncoveredUsers(
+            user.schoolId,
+            users,
+            categories,
+        );
+        const message = `Мероприятие удалено: "${event.title}"`;
+
+        // Сначала удаляем мероприятие, затем создаём уведомления БЕЗ привязки к нему
+        await this.eventRepository.remove(event);
+
         if (categories.length > 0) {
-            await this.notificationsService.createEventNotification(
-                user.schoolId, categories, event.id, NotificationType.EVENT_DELETED, `Мероприятие удалено: "${event.title}"`,
+            const notifications = await this.notificationsService.createEventNotification(
+                user.schoolId, categories, null, NotificationType.EVENT_DELETED, message,
             );
+            if (notifications && notifications.length > 0) {
+                this.notificationsGateway.sendUniqueNotificationToCategories(
+                    user.schoolId, categories, { ...notifications[0], createdAt: new Date().toISOString() },
+                );
+            }
         }
 
-        await this.eventRepository.remove(event);
+        if (usersEff.length > 0) {
+            const un = await this.notificationsService.createUserEventNotification(
+                user.schoolId, usersEff, null, NotificationType.EVENT_DELETED, message,
+            );
+            if (un && un.length > 0) {
+                this.notificationsGateway.sendNotificationToUsers(
+                    user.schoolId, usersEff, { ...un[0], createdAt: new Date().toISOString() },
+                );
+            }
+        }
+
         return { success: true };
     }
 
@@ -340,11 +487,23 @@ export class EventsService {
             where: { schoolId: user.schoolId, fullName: user.fullName },
         });
 
-        return Promise.all(tasks.map(async (task) => {
-            const completions = await this.taskCompletionRepository.find({ where: { eventTaskId: task.id } });
-            const completedByMe = profile ? completions.some(c => c.userProfileId === profile.id) : false;
+        // ИСПРАВЛЕНО: отметки грузим одним запросом (было N+1 — по запросу на задачу)
+        const allCompletions = tasks.length
+            ? await this.taskCompletionRepository.find({
+                  where: { eventTaskId: In(tasks.map((t) => t.id)) },
+              })
+            : [];
+        const byTask = new Map<number, typeof allCompletions>();
+        for (const c of allCompletions) {
+            if (!byTask.has(c.eventTaskId)) byTask.set(c.eventTaskId, []);
+            byTask.get(c.eventTaskId)!.push(c);
+        }
+
+        return tasks.map((task) => {
+            const completions = byTask.get(task.id) || [];
+            const completedByMe = profile ? completions.some((c) => c.userProfileId === profile.id) : false;
             return { ...task, completedByMe, completionCount: completions.length };
-        }));
+        });
     }
 
     async updateTask(eventId: number, taskId: number, dto: UpdateEventTaskDto, user: any): Promise<EventTask> {
@@ -530,6 +689,8 @@ export class EventsService {
             schoolId: event.schoolId,
             title: event.title,
             description: event.description,
+            location: event.location,
+            recurrence: (event as any).recurrence || null,
             startDate: event.startDate,
             endDate: event.endDate,
             allDay: event.allDay,
@@ -538,7 +699,8 @@ export class EventsService {
             creatorName: event.creatorName,
             createdAt: event.createdAt,
             updatedAt: event.updatedAt,
-            assigneeCategories: event.assignees?.map(a => a.assigneeCategory) || [],
+            assigneeCategories: event.assignees?.filter((a: any) => a.assigneeCategory).map(a => a.assigneeCategory) || [],
+            assigneeUsers: event.assignees?.filter((a: any) => a.assigneeUser).map((a: any) => a.assigneeUser as string) || [],
             attachments: event.attachments || [],
             tasks: event.tasks || [],
             agendaItems: event.agendaItems || [],

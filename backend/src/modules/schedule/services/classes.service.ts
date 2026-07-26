@@ -66,7 +66,20 @@ export class ClassesService {
         return this.groupRepo.save(group);
     }
 
-    async removeGroup(groupId: number): Promise<void> {
+    /**
+     * ИСПРАВЛЕНО: раньше группа удалялась по одному id без проверки школы —
+     * администратор одной школы мог удалить группу класса другой школы.
+     */
+    async removeGroup(groupId: number, schoolId: number): Promise<void> {
+        const group = await this.groupRepo.findOne({
+            where: { id: groupId },
+            relations: ['schoolClass'],
+        });
+        if (!group) throw new NotFoundException('Группа не найдена');
+
+        const classId = (group as any).classId ?? (group as any).schoolClass?.id;
+        await this.findOne(classId, schoolId); // бросит 404, если класс чужой
+
         await this.groupRepo.delete(groupId);
     }
 }

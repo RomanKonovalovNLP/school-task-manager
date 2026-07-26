@@ -36,3 +36,16 @@ coverage/
 
 # Misc
 .eslintcache
+
+# Резервные копии базы и вложений — не должны попадать в репозиторий
+backups/
+*.dump
+*.tar.gz
+
+# Загруженные пользователями файлы
+backend/uploads/
+
+# Файлы с боевыми настройками и секретами
+env.production
+*/env.production
+env.*.local

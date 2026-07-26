@@ -10,8 +10,10 @@ import { SchoolAuthGuard } from '../../common/guards/school-auth.guard';
 import { AdminGuard } from '../../common/guards/admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
+// Статистика — раздел администратора: показывает данные по всей школе
+// (в интерфейсе пункт меню тоже виден только админам)
 @Controller('statistics')
-@UseGuards(SchoolAuthGuard)
+@UseGuards(SchoolAuthGuard, AdminGuard)
 export class StatisticsController {
     constructor(private readonly statisticsService: StatisticsService) {}
 
@@ -79,5 +81,19 @@ export class StatisticsController {
     @UseGuards(AdminGuard)
     async getTasksCompletionStatistics(@CurrentUser() user: any) {
         return this.statisticsService.getTasksCompletionStatistics(user.schoolId);
+    }
+
+    /**
+     * Статистика по неделям (только для админов)
+     * GET /statistics/weekly?weeks=8
+     */
+    @Get('weekly')
+    @UseGuards(AdminGuard)
+    async getWeeklyStatistics(
+        @CurrentUser() user: any,
+        @Query('weeks', new ParseIntPipe({ optional: true })) weeks?: number,
+    ) {
+        const safeWeeks = Math.min(Math.max(weeks || 8, 2), 26);
+        return this.statisticsService.getWeeklyStatistics(user.schoolId, safeWeeks);
     }
 }

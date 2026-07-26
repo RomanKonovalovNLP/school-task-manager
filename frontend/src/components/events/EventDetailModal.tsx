@@ -26,6 +26,7 @@ import {
 } from '@mui/material';
 import {
     AccessTime,
+    LocationOn,
     Person,
     AttachFile,
     Delete,
@@ -246,10 +247,17 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                             <Person fontSize="small" color="action" />
                             <Typography variant="body2">{event.creatorName}</Typography>
                         </Box>
+                        {event.location && (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <LocationOn fontSize="small" color="action" />
+                                <Typography variant="body2">{event.location}</Typography>
+                            </Box>
+                        )}
                     </Box>
                     {event.description && <Typography variant="body1" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>{event.description}</Typography>}
                     <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                         {event.assigneeCategories?.map((cat) => <Chip key={cat} label={cat} size="small" variant="outlined" />)}
+                        {event.assigneeUsers?.map((u) => <Chip key={`u-${u}`} icon={<Person sx={{ fontSize: '0.9rem' }} />} label={u} size="small" color="secondary" variant="outlined" />)}
                     </Box>
                 </Box>
 
@@ -401,7 +409,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 <Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
                         <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Task /> Задачи ({completedTasks}/{totalTasks})
+                            <Task /> Задачи{totalTasks > 0 ? ` (${completedTasks}/${totalTasks})` : ''}
                         </Typography>
                     </Box>
 

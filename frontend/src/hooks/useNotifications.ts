@@ -15,6 +15,15 @@ interface Notification {
     createdAt: string;
 }
 
+/** Заголовок браузерного уведомления по его типу */
+const browserNotificationTitle = (type: string): string => {
+    if (type === 'weekly_digest') return 'Итоги недели';
+    if (type === 'deadline_changed') return 'Изменение срока';
+    if (type === 'task_deleted') return 'Задача удалена';
+    if (type?.includes('event')) return 'Мероприятие';
+    return 'Новая задача';
+};
+
 export const useNotifications = () => {
     const [socket, setSocket] = useState<Socket | null>(null);
     const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -60,8 +69,9 @@ export const useNotifications = () => {
             setUnreadCount((prev) => prev + 1);
 
             // Опционально: показать браузерное уведомление
+            // ИСПРАВЛЕНО: заголовок соответствует типу — раньше всё называлось «Новая задача!»
             if ('Notification' in window && window.Notification.permission === 'granted') {
-                new window.Notification('Новая задача!', {
+                new window.Notification(browserNotificationTitle(notification.notificationType), {
                     body: notification.message,
                     icon: '/logo192.png',
                 });
@@ -74,6 +84,12 @@ export const useNotifications = () => {
                 prev.map((n) => (n.id === notificationId ? { ...n, isRead: true } : n))
             );
             setUnreadCount((prev) => Math.max(0, prev - 1));
+        });
+
+        // Все уведомления прочитаны
+        newSocket.on('all_notifications_read', () => {
+            setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+            setUnreadCount(0);
         });
 
         setSocket(newSocket);
@@ -93,6 +109,13 @@ export const useNotifications = () => {
         [socket]
     );
 
+    // Отметить все уведомления прочитанными
+    const markAllAsRead = useCallback(() => {
+        if (socket) {
+            socket.emit('mark_all_as_read');
+        }
+    }, [socket]);
+
     // Запросить разрешение на браузерные уведомления
     const requestNotificationPermission = useCallback(async () => {
         if ('Notification' in window && window.Notification.permission === 'default') {
@@ -105,6 +128,7 @@ export const useNotifications = () => {
         unreadCount,
         isConnected,
         markAsRead,
+        markAllAsRead,
         requestNotificationPermission,
     };
 };

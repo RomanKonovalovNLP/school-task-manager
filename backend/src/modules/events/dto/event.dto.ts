@@ -9,6 +9,26 @@ export class CreateEventDto {
     @IsOptional()
     description?: string;
 
+    // Место проведения
+    @IsString()
+    @IsOptional()
+    location?: string;
+
+    // Повторение: none | daily | weekly | monthly
+    @IsString()
+    @IsOptional()
+    recurrence?: string;
+
+    @IsDateString()
+    @IsOptional()
+    recurrenceUntil?: string;
+
+    // Персональные ответственные (ФИО)
+    @IsArray()
+    @IsString({ each: true })
+    @IsOptional()
+    assigneeUsers?: string[];
+
     // ✅ НОВОЕ: Дата и время начала (обязательно)
     @IsDateString()
     @IsNotEmpty()
@@ -44,6 +64,11 @@ export class UpdateEventDto {
     @IsOptional()
     description?: string;
 
+    // Место проведения
+    @IsString()
+    @IsOptional()
+    location?: string;
+
     // ✅ НОВОЕ: Дата и время начала
     @IsDateString()
     @IsOptional()
@@ -63,6 +88,11 @@ export class UpdateEventDto {
     @IsString({ each: true })
     @IsOptional()
     assigneeCategories?: string[];
+
+    @IsArray()
+    @IsString({ each: true })
+    @IsOptional()
+    assigneeUsers?: string[];
 
     // Для обратной совместимости
     @IsDateString()

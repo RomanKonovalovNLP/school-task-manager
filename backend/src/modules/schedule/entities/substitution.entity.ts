@@ -54,7 +54,18 @@ export class Substitution {
     @JoinColumn({ name: 'new_subject_id' })
     newSubject: Subject;
 
-    // Урок отменён
+    // Перенос позиции урока (null = та же позиция)
+    @Column({ name: 'new_day_of_week', type: 'int', nullable: true })
+    newDayOfWeek: number;
+
+    @Column({ name: 'new_lesson_number', type: 'int', nullable: true })
+    newLessonNumber: number;
+
+    // Неделя для двухнедельного расписания (both/odd/even)
+    @Column({ name: 'new_week_type', type: 'varchar', length: 10, nullable: true })
+    newWeekType: string;
+
+    // Урок отменён / «окно» (ячейка освобождается)
     @Column({ name: 'is_cancelled', type: 'boolean', default: false })
     isCancelled: boolean;
 
@@ -66,6 +77,6 @@ export class Substitution {
     @Column({ name: 'created_by', type: 'varchar', length: 255 })
     createdBy: string;
 
-    @CreateDateColumn({ name: 'created_at' })
+    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
     createdAt: Date;
 }

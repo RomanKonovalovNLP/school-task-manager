@@ -10,6 +10,7 @@ import {
     Collapse,
     FormControlLabel,
     Switch,
+    Checkbox,
     Badge,
     Button,
     Dialog,
@@ -32,6 +33,7 @@ import {
 } from '@mui/icons-material';
 import { useDrag, DragSourceMonitor } from 'react-dnd';
 import { Workload, SchoolClass, Teacher, Subject, Room, ClassGroup } from '../../types/schedule';
+import { getTerms, InstitutionTerms } from '../../utils/institutionTypes';
 
 interface WorkloadPanelProps {
     workloads: Workload[];
@@ -41,12 +43,16 @@ interface WorkloadPanelProps {
     onAddWorkload?: (data: {
         classId: number; subjectId: number; teacherId: number;
         roomId?: number; groupId?: number; hoursPerWeek: number;
+        allowDoubleLessons?: boolean;
+        additionalClassIds?: number[];
+        additionalTeacherIds?: number[];
     }) => Promise<void>;
     onDeleteWorkload?: (workloadId: number) => Promise<void>;
     classes?: SchoolClass[];
     teachers?: Teacher[];
     subjects?: Subject[];
     rooms?: Room[];
+    terms?: InstitutionTerms;
 }
 
 // Компонент draggable элемента нагрузки
@@ -170,6 +176,7 @@ const WorkloadPanel: React.FC<WorkloadPanelProps> = ({
     teachers = [],
     subjects = [],
     rooms = [],
+    terms = getTerms('school'),
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [expandedClasses, setExpandedClasses] = useState<Set<number>>(new Set());
@@ -182,6 +189,9 @@ const WorkloadPanel: React.FC<WorkloadPanelProps> = ({
         teacherId: 0,
         roomId: 0,
         hoursPerWeek: 2,
+        allowDoubleLessons: false,
+        additionalClassIds: [] as number[],
+        additionalTeacherIds: [] as number[],
     });
 
     // FIX #8: Подгруппы выбранного класса
@@ -202,9 +212,12 @@ const WorkloadPanel: React.FC<WorkloadPanelProps> = ({
                 roomId: newWorkload.roomId || undefined,
                 groupId: newWorkload.groupId || undefined,  // FIX #8
                 hoursPerWeek: newWorkload.hoursPerWeek,
+                allowDoubleLessons: newWorkload.allowDoubleLessons,
+                additionalClassIds: newWorkload.additionalClassIds.length ? newWorkload.additionalClassIds : undefined,
+                additionalTeacherIds: newWorkload.additionalTeacherIds.length ? newWorkload.additionalTeacherIds : undefined,
             });
             setAddDialogOpen(false);
-            setNewWorkload({ classId: 0, groupId: 0, subjectId: 0, teacherId: 0, roomId: 0, hoursPerWeek: 2 });
+            setNewWorkload({ classId: 0, groupId: 0, subjectId: 0, teacherId: 0, roomId: 0, hoursPerWeek: 2, allowDoubleLessons: false, additionalClassIds: [], additionalTeacherIds: [] });
         } catch {
             // error handled by parent
         } finally {
@@ -361,8 +374,8 @@ const WorkloadPanel: React.FC<WorkloadPanelProps> = ({
                 <DialogTitle>Добавить нагрузку</DialogTitle>
                 <DialogContent>
                     <FormControl fullWidth sx={{ mt: 2, mb: 2 }}>
-                        <InputLabel>Класс *</InputLabel>
-                        <Select value={newWorkload.classId || ''} label="Класс *" onChange={(e) => setNewWorkload({ ...newWorkload, classId: Number(e.target.value), groupId: 0 })}>
+                        <InputLabel>{terms.classLabel} *</InputLabel>
+                        <Select value={newWorkload.classId || ''} label={`${terms.classLabel} *`} onChange={(e) => setNewWorkload({ ...newWorkload, classId: Number(e.target.value), groupId: 0 })}>
                             {classes.map((c) => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}
                         </Select>
                     </FormControl>
@@ -372,7 +385,7 @@ const WorkloadPanel: React.FC<WorkloadPanelProps> = ({
                         <FormControl fullWidth sx={{ mb: 2 }}>
                             <InputLabel>Подгруппа</InputLabel>
                             <Select value={newWorkload.groupId || ''} label="Подгруппа" onChange={(e) => setNewWorkload({ ...newWorkload, groupId: Number(e.target.value) })}>
-                                <MenuItem value={0}>— Весь класс —</MenuItem>
+                                <MenuItem value={0}>— {terms.classLabel} целиком —</MenuItem>
                                 {selectedClassGroups.map((g) => <MenuItem key={g.id} value={g.id}>{g.name}{g.studentsCount ? ` (${g.studentsCount} уч.)` : ''}</MenuItem>)}
                             </Select>
                         </FormControl>
@@ -386,15 +399,15 @@ const WorkloadPanel: React.FC<WorkloadPanelProps> = ({
                     </FormControl>
 
                     <FormControl fullWidth sx={{ mb: 2 }}>
-                        <InputLabel>Учитель *</InputLabel>
-                        <Select value={newWorkload.teacherId || ''} label="Учитель *" onChange={(e) => setNewWorkload({ ...newWorkload, teacherId: Number(e.target.value) })}>
+                        <InputLabel>{terms.teacherLabel} *</InputLabel>
+                        <Select value={newWorkload.teacherId || ''} label={`${terms.teacherLabel} *`} onChange={(e) => setNewWorkload({ ...newWorkload, teacherId: Number(e.target.value) })}>
                             {teachers.map((t) => <MenuItem key={t.id} value={t.id}>{t.fullName}</MenuItem>)}
                         </Select>
                     </FormControl>
 
                     <FormControl fullWidth sx={{ mb: 2 }}>
-                        <InputLabel>Кабинет</InputLabel>
-                        <Select value={newWorkload.roomId || ''} label="Кабинет" onChange={(e) => setNewWorkload({ ...newWorkload, roomId: Number(e.target.value) })}>
+                        <InputLabel>{terms.roomLabel}</InputLabel>
+                        <Select value={newWorkload.roomId || ''} label={terms.roomLabel} onChange={(e) => setNewWorkload({ ...newWorkload, roomId: Number(e.target.value) })}>
                             <MenuItem value={0}>— Не указан —</MenuItem>
                             {rooms.map((r) => <MenuItem key={r.id} value={r.id}>{r.name}</MenuItem>)}
                         </Select>
@@ -404,6 +417,60 @@ const WorkloadPanel: React.FC<WorkloadPanelProps> = ({
                         onChange={(e) => setNewWorkload({ ...newWorkload, hoursPerWeek: Math.max(1, Number(e.target.value)) })}
                         inputProps={{ min: 1, max: 20 }}
                     />
+
+                    <FormControlLabel
+                        sx={{ mt: 1, alignItems: 'flex-start' }}
+                        control={
+                            <Checkbox
+                                checked={newWorkload.allowDoubleLessons}
+                                onChange={(e) => setNewWorkload({ ...newWorkload, allowDoubleLessons: e.target.checked })}
+                            />
+                        }
+                        label={
+                            <Box>
+                                <Typography variant="body2">Разрешить сдвоенные уроки (пары)</Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    Автосоставитель сможет ставить два урока подряд в один день.
+                                    Без галочки часы распределяются по разным дням.
+                                </Typography>
+                            </Box>
+                        }
+                    />
+
+                    {/* Объединённый урок / поток: несколько классов на одном занятии */}
+                    <FormControl fullWidth sx={{ mt: 2, mb: 2 }}>
+                        <InputLabel>Объединить с классами (поток/лекция)</InputLabel>
+                        <Select
+                            multiple
+                            value={newWorkload.additionalClassIds}
+                            label="Объединить с классами (поток/лекция)"
+                            onChange={(e) => setNewWorkload({ ...newWorkload, additionalClassIds: (e.target.value as number[]) })}
+                            renderValue={(sel) => (sel as number[]).map((id) => classes.find((c) => c.id === id)?.name || id).join(', ')}
+                        >
+                            {classes.filter((c) => c.id !== newWorkload.classId).map((c) => (
+                                <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+
+                    {/* Совместное преподавание: несколько преподавателей на одном занятии */}
+                    <FormControl fullWidth sx={{ mb: 1 }}>
+                        <InputLabel>Совместно с преподавателями</InputLabel>
+                        <Select
+                            multiple
+                            value={newWorkload.additionalTeacherIds}
+                            label="Совместно с преподавателями"
+                            onChange={(e) => setNewWorkload({ ...newWorkload, additionalTeacherIds: (e.target.value as number[]) })}
+                            renderValue={(sel) => (sel as number[]).map((id) => teachers.find((t) => t.id === id)?.shortName || teachers.find((t) => t.id === id)?.fullName || id).join(', ')}
+                        >
+                            {teachers.filter((t) => t.id !== newWorkload.teacherId).map((t) => (
+                                <MenuItem key={t.id} value={t.id}>{t.fullName}</MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                    <Typography variant="caption" color="text.secondary">
+                        Объединённый урок займёт все выбранные классы и преподавателей в одном слоте (лекция-поток, совместное занятие).
+                    </Typography>
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setAddDialogOpen(false)}>Отмена</Button>

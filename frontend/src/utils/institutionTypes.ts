@@ -10,20 +10,25 @@ export interface InstitutionTerms {
     // Классы / Группы
     classLabel: string;
     classLabelPlural: string;
+    classLabelAcc: string;      // винительный: «Добавить класс/группу»
     // Уроки / Пары
     lessonLabel: string;
     lessonLabelPlural: string;
     // Ученики / Студенты
     studentLabel: string;
     studentLabelPlural: string;
+    studentGenPlural: string;   // родительный мн.: «Учеников/Студентов»
     // Учителя / Преподаватели
     teacherLabel: string;
     teacherLabelPlural: string;
+    teacherLabelAcc: string;    // винительный: «Добавить учителя/преподавателя»
     // Кабинеты / Аудитории
     roomLabel: string;
     roomLabelPlural: string;
+    roomLabelAcc: string;       // винительный: «Добавить кабинет/аудиторию»
     // Параллель / Курс
     gradeLevelLabel: string;
+    gradeLevelShort: string;    // краткая форма для таблиц: «Параллель/Курс»
     gradeLevelMin: number;
     gradeLevelMax: number;
     // Параметры расписания
@@ -43,15 +48,20 @@ const TERMS: Record<InstitutionType, InstitutionTerms> = {
         label: 'Школа',
         classLabel: 'Класс',
         classLabelPlural: 'Классы',
+        classLabelAcc: 'класс',
         lessonLabel: 'Урок',
         lessonLabelPlural: 'Уроки',
         studentLabel: 'Ученик',
         studentLabelPlural: 'Ученики',
+        studentGenPlural: 'Учеников',
         teacherLabel: 'Учитель',
         teacherLabelPlural: 'Учителя',
+        teacherLabelAcc: 'учителя',
         roomLabel: 'Кабинет',
         roomLabelPlural: 'Кабинеты',
+        roomLabelAcc: 'кабинет',
         gradeLevelLabel: 'Параллель (1-11)',
+        gradeLevelShort: 'Параллель',
         gradeLevelMin: 1,
         gradeLevelMax: 11,
         defaultLessonDuration: 45,
@@ -67,15 +77,20 @@ const TERMS: Record<InstitutionType, InstitutionTerms> = {
         label: 'Колледж / Техникум',
         classLabel: 'Группа',
         classLabelPlural: 'Группы',
+        classLabelAcc: 'группу',
         lessonLabel: 'Пара',
         lessonLabelPlural: 'Пары',
         studentLabel: 'Студент',
         studentLabelPlural: 'Студенты',
+        studentGenPlural: 'Студентов',
         teacherLabel: 'Преподаватель',
         teacherLabelPlural: 'Преподаватели',
+        teacherLabelAcc: 'преподавателя',
         roomLabel: 'Аудитория',
         roomLabelPlural: 'Аудитории',
+        roomLabelAcc: 'аудиторию',
         gradeLevelLabel: 'Курс (1-4)',
+        gradeLevelShort: 'Курс',
         gradeLevelMin: 1,
         gradeLevelMax: 4,
         defaultLessonDuration: 90,
@@ -91,15 +106,20 @@ const TERMS: Record<InstitutionType, InstitutionTerms> = {
         label: 'Университет / ВУЗ',
         classLabel: 'Группа',
         classLabelPlural: 'Группы',
+        classLabelAcc: 'группу',
         lessonLabel: 'Пара',
         lessonLabelPlural: 'Пары',
         studentLabel: 'Студент',
         studentLabelPlural: 'Студенты',
+        studentGenPlural: 'Студентов',
         teacherLabel: 'Преподаватель',
         teacherLabelPlural: 'Преподаватели',
+        teacherLabelAcc: 'преподавателя',
         roomLabel: 'Аудитория',
         roomLabelPlural: 'Аудитории',
+        roomLabelAcc: 'аудиторию',
         gradeLevelLabel: 'Курс (1-6)',
+        gradeLevelShort: 'Курс',
         gradeLevelMin: 1,
         gradeLevelMax: 6,
         defaultLessonDuration: 90,

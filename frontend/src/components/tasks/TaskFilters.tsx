@@ -14,6 +14,10 @@ import { useAppDispatch, useAppSelector } from '../../hooks/useRedux';
 import { setFilters, clearFilters } from '../../store/slices/tasksSlice';
 import { tasksService } from '../../services/tasks.service';
 
+const PRIORITY_LABELS: Record<string, string> = {
+    important: 'Важные', urgent: 'Срочные', medium: 'Средние', low: 'Несрочные', overdue: 'Просроченные',
+};
+
 interface TaskFiltersProps {
     onRefresh: () => void;
 }
@@ -60,18 +64,47 @@ const TaskFilters: React.FC<TaskFiltersProps> = ({ onRefresh }) => {
                 flexDirection: isMobile ? 'column' : 'row',
                 gap: 2,
                 alignItems: isMobile ? 'stretch' : 'center',
+                // Даём панели сжиматься, чтобы фильтры справа не уезжали на вторую строку
+                minWidth: 0,
+                flexShrink: 1,
             }}
         >
             {/* Фильтр по категории */}
             <TextField
                 select
                 label="Категория"
-                value={filters.category}
-                onChange={(e) => handleFilterChange('category', e.target.value)}
                 size="small"
-                sx={{ minWidth: isMobile ? '100%' : 200 }}
+                value={filters.category}
+                onChange={(e) => {
+                    const v = e.target.value as unknown as string[] | string;
+                    const arr = Array.isArray(v) ? v : String(v).split(',').filter(Boolean);
+                    if (arr.includes('__all__')) {
+                        // «Все категории» = пустой выбор; тогда клик по конкретной оставит только её
+                        dispatch(setFilters({ category: [] }));
+                        return;
+                    }
+                    dispatch(setFilters({ category: arr }));
+                }}
+                sx={{ minWidth: isMobile ? '100%' : 150, maxWidth: isMobile ? '100%' : 220, flexShrink: 1 }}
+                InputLabelProps={{ shrink: true }}
+                SelectProps={{
+                    multiple: true,
+                    displayEmpty: true,
+                    renderValue: (selected: any) => {
+                        const arr = selected as string[];
+                        if (arr.length === 0) return 'Все категории';
+                        const labelOf = (v: string) => v === '__forme__' ? 'Для меня' : v === '__personal__' ? 'Персонально' : v;
+                        const realCats = arr.filter((v) => !v.startsWith('__'));
+                        if (arr.length === realCats.length && realCats.length === categories.length) return 'Все категории';
+                        return arr.map(labelOf).join(', ');
+                    },
+                }}
             >
-                <MenuItem value="">Все категории</MenuItem>
+                <MenuItem value="__all__" sx={{ fontWeight: 600 }}>
+                    Все категории
+                </MenuItem>
+                <MenuItem value="__forme__">Для меня</MenuItem>
+                {user?.isAdmin && <MenuItem value="__personal__">Персонально (все адресные)</MenuItem>}
                 {categories.map((cat) => (
                     <MenuItem key={cat.id} value={cat.categoryName}>
                         {cat.categoryName}
@@ -79,16 +112,29 @@ const TaskFilters: React.FC<TaskFiltersProps> = ({ onRefresh }) => {
                 ))}
             </TextField>
 
-            {/* Фильтр по приоритету */}
+            {/* Фильтр по приоритету (множественный выбор) */}
             <TextField
                 select
                 label="Приоритет"
-                value={filters.priority}
-                onChange={(e) => handleFilterChange('priority', e.target.value)}
                 size="small"
-                sx={{ minWidth: isMobile ? '100%' : 200 }}
+                value={filters.priority}
+                onChange={(e) => {
+                    const v = e.target.value as unknown as string[] | string;
+                    const arr = Array.isArray(v) ? v : String(v).split(',').filter(Boolean);
+                    dispatch(setFilters({ priority: arr }));
+                }}
+                sx={{ minWidth: isMobile ? '100%' : 150, maxWidth: isMobile ? '100%' : 220, flexShrink: 1 }}
+                InputLabelProps={{ shrink: true }}
+                SelectProps={{
+                    multiple: true,
+                    displayEmpty: true,
+                    renderValue: (selected: any) => {
+                        const arr = selected as string[];
+                        return arr.length === 0 ? 'Все приоритеты' : arr.map((v) => PRIORITY_LABELS[v] || v).join(', ');
+                    },
+                }}
             >
-                <MenuItem value="">Все приоритеты</MenuItem>
+                <MenuItem value="important">Важные</MenuItem>
                 <MenuItem value="urgent">Срочные</MenuItem>
                 <MenuItem value="medium">Средние</MenuItem>
                 <MenuItem value="low">Несрочные</MenuItem>

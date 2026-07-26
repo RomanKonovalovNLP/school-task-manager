@@ -1,7 +1,9 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, LessThan } from 'typeorm';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import * as bcrypt from 'bcrypt';
+import { NotFoundException } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { School } from '../schools/entities/school.entity';
 // ИСПРАВЛЕНИЕ: Правильный путь к Admin entity (в модуле admins)
@@ -70,6 +72,29 @@ export class AuthService {
 
         if (!school) {
             throw new UnauthorizedException('Неверный пароль школы');
+        }
+
+        // Подтверждение входа: новый гость требует одобрения администратора (единожды)
+        let profile = await this.userProfileRepository.findOne({
+            where: { schoolId: school.id, fullName: loginDto.fullName },
+        });
+        if (!profile) {
+            profile = this.userProfileRepository.create({
+                schoolId: school.id,
+                fullName: loginDto.fullName,
+                approved: false,
+            } as any) as unknown as UserProfile;
+            await this.userProfileRepository.save(profile);
+            return {
+                pendingApproval: true,
+                message: 'Вход отправлен на подтверждение администратору школы. Попробуйте войти позже.',
+            } as any;
+        }
+        if (!(profile as any).approved) {
+            return {
+                pendingApproval: true,
+                message: 'Ваш вход ожидает подтверждения администратором школы.',
+            } as any;
         }
 
         // Создаём или обновляем сессию
@@ -226,6 +251,71 @@ export class AuthService {
     /**
      * Выход из системы
      */
+    // ===== Подтверждение входа новых пользователей (админ) =====
+
+    async getPendingUsers(schoolId: number) {
+        return this.userProfileRepository.find({
+            where: { schoolId, approved: false } as any,
+            order: { createdAt: 'ASC' },
+        });
+    }
+
+    async getAllUsers(schoolId: number) {
+        return this.userProfileRepository.find({
+            where: { schoolId },
+            order: { fullName: 'ASC' },
+        });
+    }
+
+    /**
+     * Справочник сотрудников для назначения задач и мероприятий «персонально».
+     * Доступен любому пользователю школы, поэтому отдаём только id и ФИО —
+     * без служебных полей (статус подтверждения, даты и т.п.).
+     */
+    async getUsersDirectory(schoolId: number) {
+        const profiles = await this.userProfileRepository.find({
+            where: { schoolId, approved: true } as any,
+            order: { fullName: 'ASC' },
+        });
+
+        return profiles.map((p) => ({ id: p.id, fullName: p.fullName }));
+    }
+
+    async revokeUser(id: number, schoolId: number) {
+        const p = await this.userProfileRepository.findOne({ where: { id, schoolId } });
+        if (!p) throw new NotFoundException('Пользователь не найден');
+        (p as any).approved = false;
+        await this.userProfileRepository.save(p);
+
+        // ИСПРАВЛЕНО: отзыв доступа не завершал активные сессии — пользователь
+        // продолжал работать в приложении, пока сам не выйдет
+        await this.sessionRepository.delete({ schoolId, fullName: p.fullName });
+
+        return { success: true };
+    }
+
+    async getPendingCount(schoolId: number) {
+        const count = await this.userProfileRepository.count({ where: { schoolId, approved: false } as any });
+        return { count };
+    }
+
+    async approveUser(id: number, schoolId: number) {
+        const p = await this.userProfileRepository.findOne({ where: { id, schoolId } });
+        if (!p) throw new NotFoundException('Пользователь не найден');
+        (p as any).approved = true;
+        await this.userProfileRepository.save(p);
+        return { success: true };
+    }
+
+    async rejectUser(id: number, schoolId: number) {
+        const p = await this.userProfileRepository.findOne({ where: { id, schoolId } });
+        if (!p) throw new NotFoundException('Пользователь не найден');
+        // Сессии отклонённого пользователя тоже завершаем
+        await this.sessionRepository.delete({ schoolId, fullName: p.fullName });
+        await this.userProfileRepository.remove(p);
+        return { success: true };
+    }
+
     async logout(sessionToken: string) {
         const session = await this.sessionRepository.findOne({
             where: { sessionToken },
@@ -265,5 +355,18 @@ export class AuthService {
             sessionToken: session.sessionToken,
             categories,
         };
+    }
+
+    /**
+     * Cron: ежедневная очистка неактивных сессий (не использовались 30+ дней)
+     */
+    @Cron(CronExpression.EVERY_DAY_AT_4AM)
+    async cleanupExpiredSessions() {
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - 30);
+        const result = await this.sessionRepository.delete({
+            lastActive: LessThan(cutoff),
+        });
+        return { deleted: result.affected || 0 };
     }
 }

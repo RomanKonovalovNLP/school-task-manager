@@ -11,10 +11,14 @@ import {
     Divider,
     Button,
     Chip,
+    Tooltip,
 } from '@mui/material';
 import NotificationsIcon from '@mui/icons-material/Notifications';
+import DoneIcon from '@mui/icons-material/Done';
+import DoneAllIcon from '@mui/icons-material/DoneAll';
 import EventIcon from '@mui/icons-material/Event';
 import TaskIcon from '@mui/icons-material/Task';
+import InsightsIcon from '@mui/icons-material/Insights';
 import { useNotifications } from '../../hooks/useNotifications';
 import { useAppDispatch } from '../../hooks/useRedux';
 import { setSelectedTask } from '../../store/slices/tasksSlice';
@@ -71,7 +75,10 @@ const formatNotificationTime = (dateString: string): string => {
 /**
  * Определяет тип уведомления (задача или мероприятие)
  */
-const getNotificationType = (notificationType: string): 'task' | 'event' => {
+const getNotificationType = (notificationType: string): 'task' | 'event' | 'digest' => {
+    if (notificationType === 'weekly_digest') {
+        return 'digest';
+    }
     if (notificationType.startsWith('event') || notificationType.includes('event')) {
         return 'event';
     }
@@ -80,7 +87,7 @@ const getNotificationType = (notificationType: string): 'task' | 'event' => {
 
 export const NotificationBell: React.FC = () => {
     const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
-    const { notifications, unreadCount, markAsRead, isConnected } = useNotifications();
+    const { notifications, unreadCount, markAsRead, markAllAsRead, isConnected } = useNotifications();
     const dispatch = useAppDispatch();
 
     // Визуальная индикация при получении нового уведомления
@@ -261,6 +268,8 @@ export const NotificationBell: React.FC = () => {
                                         <Box sx={{ mr: 1.5, display: 'flex', alignItems: 'center' }}>
                                             {type === 'event' ? (
                                                 <EventIcon color="warning" fontSize="small" />
+                                            ) : type === 'digest' ? (
+                                                <InsightsIcon color="success" fontSize="small" />
                                             ) : (
                                                 <TaskIcon color="primary" fontSize="small" />
                                             )}
@@ -293,6 +302,23 @@ export const NotificationBell: React.FC = () => {
                                                 </Box>
                                             }
                                         />
+
+                                        {/* Отметить прочитанным, не открывая задачу/мероприятие */}
+                                        {!notification.isRead && (
+                                            <Tooltip title="Отметить прочитанным">
+                                                <IconButton
+                                                    size="small"
+                                                    edge="end"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        markAsRead(notification.id);
+                                                    }}
+                                                    sx={{ ml: 1 }}
+                                                >
+                                                    <DoneIcon fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
+                                        )}
                                     </ListItemButton>
                                 );
                             })
@@ -302,7 +328,22 @@ export const NotificationBell: React.FC = () => {
                     {notifications.length > 0 && (
                         <>
                             <Divider />
-                            <Box sx={{ p: 1, textAlign: 'center' }}>
+                            <Box
+                                sx={{
+                                    p: 1,
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                }}
+                            >
+                                <Button
+                                    size="small"
+                                    startIcon={<DoneAllIcon />}
+                                    disabled={unreadCount === 0}
+                                    onClick={markAllAsRead}
+                                >
+                                    Прочитать все
+                                </Button>
                                 <Button size="small" onClick={handleClose}>
                                     Закрыть
                                 </Button>

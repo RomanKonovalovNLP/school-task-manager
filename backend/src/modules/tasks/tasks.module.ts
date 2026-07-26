@@ -9,7 +9,11 @@ import { TaskAssignee } from './entities/task-assignee.entity';
 import { TaskView } from './entities/task-view.entity';
 import { TaskCompletion } from './entities/task-completion.entity';
 import { TaskAttachment } from './entities/task-attachment.entity';
+import { TaskGroup } from './entities/task-group.entity';
+import { TaskGroupItem } from './entities/task-group-item.entity';
+import { TaskFocus } from './entities/task-focus.entity';
 import { UserProfile } from '../users/entities/user-profile.entity';
+import { UserCategory } from '../filters/entities/user-category.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AuthModule } from '../auth/auth.module';
 
@@ -21,7 +25,11 @@ import { AuthModule } from '../auth/auth.module';
             TaskView,
             TaskCompletion,
             TaskAttachment,
+            TaskGroup,
+            TaskGroupItem,
+            TaskFocus,
             UserProfile,
+            UserCategory,
         ]),
         MulterModule.register({
             storage: memoryStorage(),

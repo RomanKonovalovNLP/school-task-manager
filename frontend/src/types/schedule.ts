@@ -227,6 +227,7 @@ export interface Workload {
     hoursPerWeek: number;
     weekType: WorkloadWeekType;
     difficulty?: number;
+    allowDoubleLessons?: boolean;
     additionalClassIds?: number[];
     additionalTeacherIds?: number[];
     notes?: string;
@@ -269,6 +270,9 @@ export interface Substitution {
     newTeacherId?: number;
     newRoomId?: number;
     newSubjectId?: number;
+    newDayOfWeek?: number;
+    newLessonNumber?: number;
+    newWeekType?: string;
     isCancelled: boolean;
     reason?: string;
     createdBy: string;

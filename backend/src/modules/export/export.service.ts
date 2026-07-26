@@ -16,7 +16,8 @@ export class ExportService {
      */
     async exportToExcel(schoolId: number): Promise<Buffer> {
         const tasks = await this.tasksRepo.find({
-            where: { schoolId },
+            // Личные задачи не выгружаем: это приватные заметки пользователей
+            where: { schoolId, isPersonal: false } as any,
             relations: ['assignees', 'views'],
             order: { deadline: 'ASC' },
         });
@@ -50,7 +51,10 @@ export class ExportService {
 
         // Заполнение данными
         tasks.forEach((task) => {
-            const categories = task.assignees?.map((a) => a.assigneeCategory).join(', ') || '-';
+            // ИСПРАВЛЕНО: у персональных назначений assigneeCategory = NULL —
+            // без фильтрации в выгрузку попадали пустые значения. Персональных
+            // адресатов показываем отдельно, по ФИО.
+            const categories = this.formatAssignees(task, ', ');
             const priority = this.getPriority(task);
             const status = task.isOverdue ? 'Просрочено' : 'Активно';
 
@@ -143,7 +147,8 @@ export class ExportService {
      */
     async exportToCSV(schoolId: number): Promise<string> {
         const tasks = await this.tasksRepo.find({
-            where: { schoolId },
+            // Личные задачи не выгружаем: это приватные заметки пользователей
+            where: { schoolId, isPersonal: false } as any,
             relations: ['assignees', 'views'],
             order: { deadline: 'ASC' },
         });
@@ -164,8 +169,7 @@ export class ExportService {
 
         // Строки данных
         const rows = tasks.map((task) => {
-            const categories =
-                task.assignees?.map((a) => a.assigneeCategory).join('; ') || '-';
+            const categories = this.formatAssignees(task, '; ');
             const priority = this.getPriority(task);
             const status = task.isOverdue ? 'Просрочено' : 'Активно';
 
@@ -194,7 +198,8 @@ export class ExportService {
      */
     async exportToJSON(schoolId: number): Promise<any> {
         const tasks = await this.tasksRepo.find({
-            where: { schoolId },
+            // Личные задачи не выгружаем: это приватные заметки пользователей
+            where: { schoolId, isPersonal: false } as any,
             relations: ['assignees', 'views'],
             order: { deadline: 'ASC' },
         });
@@ -204,7 +209,10 @@ export class ExportService {
             title: task.title,
             description: task.description,
             creator: task.creatorName,
-            categories: task.assignees?.map((a) => a.assigneeCategory) || [],
+            categories:
+                task.assignees?.filter((a: any) => a.assigneeCategory).map((a: any) => a.assigneeCategory) || [],
+            assigneeUsers:
+                task.assignees?.filter((a: any) => a.assigneeUser).map((a: any) => a.assigneeUser) || [],
             deadline: task.deadline,
             status: task.isOverdue ? 'overdue' : 'active',
             priority: this.getPriority(task),
@@ -217,6 +225,23 @@ export class ExportService {
     /**
      * Вспомогательные методы
      */
+    /**
+     * «Для кого» одной строкой: категории и персональные адресаты.
+     * Строки персональных назначений имеют assigneeCategory = NULL,
+     * поэтому их нужно обрабатывать отдельно, иначе в выгрузке появлялись пустые значения.
+     */
+    private formatAssignees(task: Task, separator: string): string {
+        const categories = (task.assignees || [])
+            .filter((a: any) => a.assigneeCategory)
+            .map((a: any) => a.assigneeCategory as string);
+        const users = (task.assignees || [])
+            .filter((a: any) => a.assigneeUser)
+            .map((a: any) => `${a.assigneeUser} (лично)`);
+
+        const all = [...categories, ...users];
+        return all.length ? all.join(separator) : '-';
+    }
+
     private getPriority(task: Task): string {
         if (task.isOverdue) return 'Просрочено';
 

@@ -13,12 +13,18 @@ import {
     Chip,
     Box,
     OutlinedInput,
+    Autocomplete,
     Alert,
     CircularProgress,
+    FormControlLabel,
+    Checkbox,
+    Typography,
 } from '@mui/material';
+import { Person } from '@mui/icons-material';
 import { Task } from '../../types';
 import { tasksService } from '../../services/tasks.service';
 import { filtersService } from '../../services/filters.service';
+import { authService } from '../../services/auth.service';
 
 interface EditTaskModalProps {
     open: boolean;
@@ -38,12 +44,38 @@ export const EditTaskModal: React.FC<EditTaskModalProps> = ({
     const [deadline, setDeadline] = useState('');
     const [categories, setCategories] = useState<string[]>([]);
     const [availableCategories, setAvailableCategories] = useState<string[]>([]);
+    const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+    const [allUsers, setAllUsers] = useState<{ id: number; fullName: string }[]>([]);
+    const [restrictAttachments, setRestrictAttachments] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         loadCategories();
     }, []);
+
+    useEffect(() => {
+        if (!open) return;
+        // Справочник сотрудников доступен всем пользователям (не только админам),
+        // чтобы любой мог назначить задачу конкретному человеку
+        authService.getUsersDirectory()
+            .then((list) => setAllUsers(list || []))
+            .catch(() => setAllUsers([]));
+    }, [open]);
+
+    type Target = { type: 'category' | 'user'; value: string; label: string };
+    const targetOptions: Target[] = React.useMemo(() => [
+        ...availableCategories.map((c) => ({ type: 'category' as const, value: c, label: c })),
+        ...allUsers.map((u) => ({ type: 'user' as const, value: u.fullName, label: u.fullName })),
+    ], [availableCategories, allUsers]);
+    const selectedTargets: Target[] = React.useMemo(() => [
+        ...categories.map((v) => ({ type: 'category' as const, value: v, label: v })),
+        ...selectedUsers.map((v) => ({ type: 'user' as const, value: v, label: v })),
+    ], [categories, selectedUsers]);
+    const handleTargetsChange = (_e: any, val: Target[]) => {
+        setCategories(val.filter((o) => o.type === 'category').map((o) => o.value));
+        setSelectedUsers(val.filter((o) => o.type === 'user').map((o) => o.value));
+    };
 
     useEffect(() => {
         if (task && open) {
@@ -59,6 +91,8 @@ export const EditTaskModal: React.FC<EditTaskModalProps> = ({
 
             // Категории из task
             setCategories(task.assigneeCategories || []);
+            setSelectedUsers(task.assigneeUsers || []);
+            setRestrictAttachments(!!task.restrictAttachments);
             setError(null);
         }
     }, [task, open]);
@@ -85,8 +119,8 @@ export const EditTaskModal: React.FC<EditTaskModalProps> = ({
             return;
         }
 
-        if (categories.length === 0) {
-            setError('Выберите хотя бы одну категорию');
+        if (categories.length === 0 && selectedUsers.length === 0) {
+            setError('Выберите хотя бы одну категорию или человека');
             return;
         }
 
@@ -99,6 +133,8 @@ export const EditTaskModal: React.FC<EditTaskModalProps> = ({
                 description,
                 deadline,
                 assigneeCategories: categories,
+                assigneeUsers: selectedUsers,
+                restrictAttachments,
             });
             onSuccess();
         } catch (err: any) {
@@ -158,28 +194,61 @@ export const EditTaskModal: React.FC<EditTaskModalProps> = ({
                     disabled={loading}
                 />
 
-                <FormControl fullWidth margin="normal" disabled={loading}>
-                    <InputLabel>Категории исполнителей</InputLabel>
-                    <Select
-                        multiple
-                        value={categories}
-                        onChange={handleCategoryChange}
-                        input={<OutlinedInput label="Категории исполнителей" />}
-                        renderValue={(selected) => (
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                                {selected.map((value) => (
-                                    <Chip key={value} label={value} size="small" />
-                                ))}
-                            </Box>
-                        )}
-                    >
-                        {availableCategories.map((cat) => (
-                            <MenuItem key={cat} value={cat}>
-                                {cat}
-                            </MenuItem>
-                        ))}
-                    </Select>
-                </FormControl>
+                <Autocomplete
+                    multiple
+                    disableCloseOnSelect
+                    disabled={loading}
+                    options={targetOptions}
+                    value={selectedTargets}
+                    onChange={handleTargetsChange}
+                    groupBy={(o) => (o.type === 'category' ? 'Категории' : 'Персонально')}
+                    getOptionLabel={(o) => o.label}
+                    isOptionEqualToValue={(o, v) => o.type === v.type && o.value === v.value}
+                    noOptionsText="Ничего не найдено"
+                    openOnFocus
+                    ListboxProps={{ style: { maxHeight: 240 } }}
+                    componentsProps={{ popper: { placement: 'bottom-start', modifiers: [{ name: 'flip', enabled: false }, { name: 'preventOverflow', enabled: true, options: { altAxis: true, padding: 8 } }] } }}
+                    renderTags={(value, getTagProps) =>
+                        value.map((o, index) => (
+                            <Chip
+                                {...getTagProps({ index })}
+                                key={`${o.type}-${o.value}`}
+                                size="small"
+                                label={o.label}
+                                color={o.type === 'user' ? 'secondary' : 'default'}
+                                icon={o.type === 'user' ? <Person sx={{ fontSize: '0.9rem' }} /> : undefined}
+                            />
+                        ))
+                    }
+                    sx={{ mt: 2 }}
+                    renderInput={(params) => (
+                        <TextField {...params} label="Для кого" placeholder="Поиск категории или человека…" />
+                    )}
+                    fullWidth
+                />
+
+                {/* Ограничение видимости вложений */}
+                <FormControlLabel
+                    sx={{ mt: 1, alignItems: 'flex-start' }}
+                    control={
+                        <Checkbox
+                            checked={restrictAttachments}
+                            onChange={(e) => setRestrictAttachments(e.target.checked)}
+                            disabled={loading}
+                        />
+                    }
+                    label={
+                        <Box>
+                            <Typography variant="body2">
+                                Скрыть вложения пользователей от других
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                                Файлы, прикреплённые пользователями, увидят только создатель задачи и
+                                администраторы. Файлы, прикреплённые вами, видны всем.
+                            </Typography>
+                        </Box>
+                    }
+                />
             </DialogContent>
 
             <DialogActions>
@@ -189,7 +258,7 @@ export const EditTaskModal: React.FC<EditTaskModalProps> = ({
                 <Button
                     onClick={handleSubmit}
                     variant="contained"
-                    disabled={loading || !title || !deadline || categories.length === 0}
+                    disabled={loading || !title || !deadline || (categories.length === 0 && selectedUsers.length === 0)}
                 >
                     {loading ? <CircularProgress size={24} /> : 'Сохранить'}
                 </Button>
