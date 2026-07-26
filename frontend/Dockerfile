@@ -1,10 +1,13 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 ARG REACT_APP_API_URL=/api
+ARG REACT_APP_WS_URL=
 COPY package*.json ./
 RUN npm install --legacy-peer-deps && npm cache clean --force
 COPY . .
 ENV REACT_APP_API_URL=$REACT_APP_API_URL
+# Адрес для WebSocket-уведомлений: без него сборка уходит на localhost
+ENV REACT_APP_WS_URL=$REACT_APP_WS_URL
 # Сборка CRA требовательна к памяти: 512 МБ перестало хватать после роста
 # приложения (падало с «JavaScript heap out of memory»).
 # 2 ГБ покрывают текущий объём; на сервере при нехватке ОЗУ добирается из swap.

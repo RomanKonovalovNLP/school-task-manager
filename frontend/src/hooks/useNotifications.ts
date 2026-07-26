@@ -15,6 +15,27 @@ interface Notification {
     createdAt: string;
 }
 
+/**
+ * Адрес сервера уведомлений.
+ *
+ * Приоритет — переменная сборки REACT_APP_WS_URL. Если её забыли передать
+ * (именно так уведомления на боевом сайте оказывались «офлайн»: сборка уходила
+ * на localhost пользователя), определяем адрес сами:
+ *  - при разработке фронтенд крутится на 3001, бэкенд на 3000;
+ *  - в production сокет живёт на том же домене, что и сайт.
+ */
+const resolveWsUrl = (): string => {
+    if (process.env.REACT_APP_WS_URL) return process.env.REACT_APP_WS_URL;
+
+    if (typeof window !== 'undefined') {
+        const { hostname, origin } = window.location;
+        const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
+        return isLocal ? 'http://localhost:3000' : origin;
+    }
+
+    return 'http://localhost:3000';
+};
+
 /** Заголовок браузерного уведомления по его типу */
 const browserNotificationTitle = (type: string): string => {
     if (type === 'weekly_digest') return 'Итоги недели';
@@ -37,7 +58,7 @@ export const useNotifications = () => {
     useEffect(() => {
         if (!sessionToken) return;
 
-        const newSocket = io(`${process.env.REACT_APP_WS_URL || 'http://localhost:3000'}/notifications`, {
+        const newSocket = io(`${resolveWsUrl()}/notifications`, {
             auth: { token: sessionToken },
             transports: ['websocket'],
             // F19: Явная настройка переподключения
