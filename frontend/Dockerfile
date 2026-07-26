@@ -5,8 +5,13 @@ COPY package*.json ./
 RUN npm install --legacy-peer-deps && npm cache clean --force
 COPY . .
 ENV REACT_APP_API_URL=$REACT_APP_API_URL
-ENV NODE_OPTIONS="--max-old-space-size=512"
+# Сборка CRA требовательна к памяти: 512 МБ перестало хватать после роста
+# приложения (падало с «JavaScript heap out of memory»).
+# 2 ГБ покрывают текущий объём; на сервере при нехватке ОЗУ добирается из swap.
+ENV NODE_OPTIONS="--max-old-space-size=2048"
 ENV GENERATE_SOURCEMAP=false
+# Отключаем интерактивный вывод и предупреждения как ошибки — в CI они не нужны
+ENV CI=false
 RUN npm run build
 
 FROM nginx:alpine
