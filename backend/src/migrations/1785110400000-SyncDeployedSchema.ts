@@ -52,6 +52,21 @@ export class SyncDeployedSchema1785110400000 implements MigrationInterface {
         `);
 
         // Персональный статус прочтения (раньше «прочитал один — пропало у всех»)
+        // Если таблица осталась от прежней версии с другой структурой — отодвигаем её
+        await queryRunner.query(`
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.tables
+                           WHERE table_schema = 'public' AND table_name = 'notification_reads')
+                   AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_schema = 'public' AND table_name = 'notification_reads'
+                                     AND column_name = 'is_hidden')
+                THEN
+                    ALTER TABLE notification_reads RENAME TO notification_reads_legacy;
+                END IF;
+            END $$;
+        `);
+
         await queryRunner.query(`
             CREATE TABLE IF NOT EXISTS notification_reads (
                 id SERIAL PRIMARY KEY,
@@ -73,6 +88,28 @@ export class SyncDeployedSchema1785110400000 implements MigrationInterface {
         `);
 
         // ---------- Личные группы задач ----------
+        // На сервере могла остаться таблица task_groups от удалённого модуля
+        // «позиции задач» — с другой структурой. CREATE TABLE IF NOT EXISTS её
+        // пропускает, и дальше падает создание индекса по owner_name.
+        // Поэтому несовместимую таблицу переименовываем, данные не теряем.
+        await queryRunner.query(`
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.tables
+                           WHERE table_schema = 'public' AND table_name = 'task_groups')
+                   AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_schema = 'public' AND table_name = 'task_groups'
+                                     AND column_name = 'owner_name')
+                THEN
+                    IF EXISTS (SELECT 1 FROM information_schema.tables
+                               WHERE table_schema = 'public' AND table_name = 'task_group_items') THEN
+                        ALTER TABLE task_group_items RENAME TO task_group_items_legacy;
+                    END IF;
+                    ALTER TABLE task_groups RENAME TO task_groups_legacy;
+                END IF;
+            END $$;
+        `);
+
         await queryRunner.query(`
             CREATE TABLE IF NOT EXISTS task_groups (
                 id SERIAL PRIMARY KEY,
@@ -93,6 +130,20 @@ export class SyncDeployedSchema1785110400000 implements MigrationInterface {
         `);
 
         // ---------- Режим «Сегодня» ----------
+        await queryRunner.query(`
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.tables
+                           WHERE table_schema = 'public' AND table_name = 'task_focus')
+                   AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_schema = 'public' AND table_name = 'task_focus'
+                                     AND column_name = 'focus_date')
+                THEN
+                    ALTER TABLE task_focus RENAME TO task_focus_legacy;
+                END IF;
+            END $$;
+        `);
+
         await queryRunner.query(`
             CREATE TABLE IF NOT EXISTS task_focus (
                 id SERIAL PRIMARY KEY,
