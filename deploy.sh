@@ -89,7 +89,39 @@ else
     echo ">>> База ещё не запущена — бэкап пропускаю (первый запуск)"
 fi
 
-# ---------- 6. Сборка и запуск ----------
+# ---------- 6. SSL: nginx не должен падать из-за отсутствующего сертификата ----------
+DOMAIN="${DOMAIN:-plantakt.ru}"
+CERTS_VOLUME="${CERTS_VOLUME:-plantakt_certbot_certs}"
+
+if ! docker run --rm -v "$CERTS_VOLUME":/etc/letsencrypt alpine \
+        test -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" 2>/dev/null; then
+    echo ">>> Сертификата нет — создаю временный самоподписанный"
+    echo "    (иначе nginx не стартует и сайт будет недоступен)"
+    docker run --rm -v "$CERTS_VOLUME":/etc/letsencrypt alpine sh -c "
+        apk add --no-cache openssl >/dev/null 2>&1
+        mkdir -p /etc/letsencrypt/live/$DOMAIN
+        openssl req -x509 -nodes -newkey rsa:2048 -days 3 \
+            -keyout /etc/letsencrypt/live/$DOMAIN/privkey.pem \
+            -out /etc/letsencrypt/live/$DOMAIN/fullchain.pem \
+            -subj '/CN=$DOMAIN' >/dev/null 2>&1"
+    echo "    после запуска выпустите настоящий: bash deploy.sh --ssl"
+fi
+
+# Выпуск или обновление настоящего сертификата Let's Encrypt
+if [ "${1:-}" = "--ssl" ]; then
+    echo ">>> Запрашиваю сертификат для $DOMAIN..."
+    docker compose up -d nginx
+    docker compose run --rm --entrypoint "" certbot \
+        certbot certonly --webroot -w /var/www/certbot \
+        -d "$DOMAIN" -d "www.$DOMAIN" \
+        --email "${CERT_EMAIL:-roman.konovalov.092001@gmail.com}" \
+        --agree-tos --no-eff-email --force-renewal
+    docker compose exec nginx nginx -s reload
+    echo "=== Сертификат обновлён ==="
+    exit 0
+fi
+
+# ---------- 7. Сборка и запуск ----------
 if [ "${1:-}" = "--build" ]; then
     echo ">>> Полная пересборка образов (5–10 минут)..."
     docker compose build --no-cache
@@ -101,7 +133,7 @@ fi
 echo ">>> Запуск..."
 docker compose up -d
 
-# ---------- 7. Проверка ----------
+# ---------- 8. Проверка ----------
 echo ">>> Жду готовности бэкенда..."
 OK=0
 for _ in $(seq 1 30); do
