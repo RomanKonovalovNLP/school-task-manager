@@ -231,7 +231,7 @@ const ScheduleViewPage: React.FC = () => {
                         return (
                             <React.Fragment key={day.num}>
                                 <TableRow>
-                                    <TableCell colSpan={1 + cols.length} sx={{ fontWeight: 700, bgcolor: off ? '#ffcdd2' : day.num === 6 ? 'secondary.light' : 'grey.200', color: off ? '#b71c1c' : 'inherit', position: 'sticky', left: 0 }}>
+                                    <TableCell colSpan={1 + cols.length} sx={{ fontWeight: 700, bgcolor: off ? 'rgba(244,67,54,0.20)' : day.num === 6 ? 'secondary.light' : 'grey.200', color: off ? 'error.main' : 'inherit', position: 'sticky', left: 0 }}>
                                         {day.name}{date ? ` · ${date.getDate()}.${String(date.getMonth() + 1).padStart(2, '0')}` : ''}{off ? ' — выходной' : ''}
                                     </TableCell>
                                 </TableRow>

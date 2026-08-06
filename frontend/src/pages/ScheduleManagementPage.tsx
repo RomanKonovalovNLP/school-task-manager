@@ -908,7 +908,9 @@ const TeacherAvailabilityTab: React.FC<{ onError: (msg: string) => void; onSucce
                                                                 '&:hover': { opacity: 0.8 },
                                                             }}
                                                         >
-                                                            <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 600, color: pref <= -2 ? '#fff' : 'text.primary' }}>
+                                                            {/* Заливка ячейки всегда светлая, поэтому текст тёмный
+                                                                независимо от темы — иначе в тёмной он исчезал. */}
+                                                            <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 600, color: pref <= -2 ? '#fff' : '#212121' }}>
                                                                 {pref === -2 ? '✕' : pref > 0 ? `+${pref}` : pref < 0 ? pref : ''}
                                                             </Typography>
                                                         </Box>

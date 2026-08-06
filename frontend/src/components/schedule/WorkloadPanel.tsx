@@ -22,6 +22,7 @@ import {
     Select,
     MenuItem,
     CircularProgress,
+    alpha,
 } from '@mui/material';
 import {
     Search,
@@ -55,6 +56,15 @@ interface WorkloadPanelProps {
     terms?: InstitutionTerms;
 }
 
+/** Полупрозрачная заливка цветом предмета: одинаково читается в обеих темах. */
+const tint = (color?: string): string => {
+    try {
+        return alpha(color || '#9e9e9e', 0.22);
+    } catch {
+        return alpha('#9e9e9e', 0.22);
+    }
+};
+
 // Компонент draggable элемента нагрузки
 interface WorkloadItemProps {
     workload: Workload;
@@ -85,7 +95,9 @@ const WorkloadItem: React.FC<WorkloadItemProps> = ({ workload, onDelete }) => {
     const schoolClass = workload.schoolClass;
     const group = workload.group;
 
-    const bgColor = subject?.color || '#E0E0E0';
+    // Цвет предмета берём полупрозрачным: сплошная светлая заливка в тёмной
+    // теме делала белый текст нечитаемым, а прозрачная подстраивается под фон.
+    const bgColor = tint(subject?.color);
 
     return (
         <div ref={ref} style={{ opacity: isDragging ? 0.5 : 1 }}>

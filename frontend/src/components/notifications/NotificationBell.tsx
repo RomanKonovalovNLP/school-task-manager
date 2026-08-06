@@ -12,6 +12,7 @@ import {
     Button,
     Chip,
     Tooltip,
+    alpha,
 } from '@mui/material';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import DoneIcon from '@mui/icons-material/Done';
@@ -248,20 +249,28 @@ export const NotificationBell: React.FC = () => {
                                     <ListItemButton
                                         key={notification.id}
                                         onClick={() => handleNotificationClick(notification)}
-                                        sx={{
-                                            backgroundColor: notification.isRead
-                                                ? 'transparent'
-                                                : type === 'event' ? '#fff3e0' : '#f0f7ff',
-                                            borderLeft: notification.isRead
-                                                ? 'none'
-                                                : '4px solid',
-                                            borderLeftColor: type === 'event' ? 'warning.main' : 'primary.main',
-                                            '&:hover': {
+                                        sx={(theme) => {
+                                            // Подсветка непрочитанных строится от цвета темы,
+                                            // иначе в тёмном режиме получаются светлые полосы.
+                                            const accent = type === 'event'
+                                                ? theme.palette.warning.main
+                                                : theme.palette.primary.main;
+                                            const strength = theme.palette.mode === 'dark' ? 0.18 : 0.1;
+                                            return {
                                                 backgroundColor: notification.isRead
-                                                    ? '#f5f5f5'
-                                                    : type === 'event' ? '#ffe0b2' : '#e3f2fd',
-                                            },
-                                            py: 1.5,
+                                                    ? 'transparent'
+                                                    : alpha(accent, strength),
+                                                borderLeft: notification.isRead
+                                                    ? 'none'
+                                                    : '4px solid',
+                                                borderLeftColor: accent,
+                                                '&:hover': {
+                                                    backgroundColor: notification.isRead
+                                                        ? theme.palette.action.hover
+                                                        : alpha(accent, strength + 0.1),
+                                                },
+                                                py: 1.5,
+                                            };
                                         }}
                                     >
                                         {/* Иконка типа */}

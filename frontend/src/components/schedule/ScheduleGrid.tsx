@@ -40,12 +40,15 @@ const SlotCell: React.FC<SlotCellProps> = ({ dayOfWeek, lessonNumber, lessons, c
     const hasDim = highlightedLessonIds && highlightedLessonIds.size > 0 && !hasHL && lessons.length > 0;
     const hasSub = substitutedLessonIds && lessons.some(l => substitutedLessonIds.has(l.id));
 
+    // Полупрозрачная заливка вместо пастельных оттенков: на светлом фоне она
+    // выглядит как бледная подсветка, на тёмном — как тёмный оттенок того же
+    // цвета, поэтому одинаково читается в обеих темах.
     let bgcolor = 'background.default', borderColor = 'divider';
-    if (isOver && canDrop) { bgcolor = 'success.light'; borderColor = 'success.main'; }
-    else if (isOver) { bgcolor = 'error.light'; borderColor = 'error.main'; }
-    else if (hasHL) { bgcolor = '#fff3e0'; borderColor = '#e65100'; }
-    else if (hasHard) { bgcolor = '#ffebee'; borderColor = 'error.main'; }
-    else if (hasSoft) { bgcolor = '#fff8e1'; borderColor = 'warning.main'; }
+    if (isOver && canDrop) { bgcolor = 'rgba(76,175,80,0.22)'; borderColor = 'success.main'; }
+    else if (isOver) { bgcolor = 'rgba(244,67,54,0.22)'; borderColor = 'error.main'; }
+    else if (hasHL) { bgcolor = 'rgba(255,152,0,0.22)'; borderColor = '#e65100'; }
+    else if (hasHard) { bgcolor = 'rgba(244,67,54,0.18)'; borderColor = 'error.main'; }
+    else if (hasSoft) { bgcolor = 'rgba(255,193,7,0.18)'; borderColor = 'warning.main'; }
 
     return (
         <div ref={ref}>

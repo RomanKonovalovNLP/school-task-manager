@@ -129,7 +129,8 @@ const renderPieLabel = (props: any) => {
     const x = cx + r * Math.cos(-midAngle * RADIAN);
     const y = cy + r * Math.sin(-midAngle * RADIAN);
     return (
-        <text x={x} y={y} fill="#555" fontSize={12} textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central">
+        // currentColor — чтобы подпись оставалась читаемой и в тёмной теме
+        <text x={x} y={y} fill="currentColor" opacity={0.75} fontSize={12} textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central">
             {`${name} ${(percent * 100).toFixed(0)}%`}
         </text>
     );

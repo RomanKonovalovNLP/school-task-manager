@@ -232,7 +232,7 @@ const SuperAdminDashboard: React.FC = () => {
     }
 
     return (
-        <Box sx={{ minHeight: '100vh', bgcolor: '#f5f5f5' }}>
+        <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
             {/* Шапка */}
             <AppBar position="static" sx={{ bgcolor: '#1a1a2e' }}>
                 <Toolbar>

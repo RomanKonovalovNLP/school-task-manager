@@ -54,3 +54,4 @@ env.*.local
 SECRETS.local.md
 *.local.md
 secrets*
+*.tsbuildinfo

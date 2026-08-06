@@ -31,8 +31,43 @@ const buildTheme = (mode: ThemeMode) =>
             primary: { main: '#1976d2' },
             secondary: { main: mode === 'dark' ? '#f06292' : '#dc004e' },
             ...(mode === 'dark'
-                ? { background: { default: '#15171c', paper: '#1e2128' } }
+                ? {
+                      background: { default: '#15171c', paper: '#1e2128' },
+                      // Светлые оттенки серого (grey.50/100/200) в приложении
+                      // используются как фон подложек: описание задачи, шапки
+                      // таблиц, служебные блоки. В тёмной теме белая подложка
+                      // с белым текстом превращалась в пустой прямоугольник,
+                      // поэтому подменяем их на тёмные поверхности.
+                      // Оттенки от 300 и темнее не трогаем: их использует сама
+                      // MUI (Chip, Avatar, Tooltip) и там всё корректно.
+                      grey: {
+                          50: '#232730',
+                          100: '#282d38',
+                          200: '#323845',
+                      },
+                  }
                 : {}),
+        },
+        components: {
+            MuiCssBaseline: {
+                styleOverrides: (theme) => ({
+                    // Графики recharts рисуют подписи и сетку своими цветами
+                    // (тёмно-серый по светлому). В тёмной теме они сливались
+                    // с фоном, поэтому подменяем их цветами темы.
+                    '.recharts-cartesian-axis-tick-value, .recharts-polar-angle-axis-tick-value, .recharts-label':
+                        { fill: theme.palette.text.secondary },
+                    '.recharts-cartesian-grid line, .recharts-polar-grid line':
+                        { stroke: theme.palette.divider },
+                    // Подсказка над графиком приходит с инлайновыми стилями,
+                    // поэтому перебиваем их явно.
+                    '.recharts-default-tooltip': {
+                        backgroundColor: `${theme.palette.background.paper} !important`,
+                        border: `1px solid ${theme.palette.divider} !important`,
+                        borderRadius: 8,
+                        color: theme.palette.text.primary,
+                    },
+                }),
+            },
         },
     });
 

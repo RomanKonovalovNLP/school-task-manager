@@ -31,10 +31,12 @@ const MONTHS_RU = ['Январь', 'Февраль', 'Март', 'Апрель',
     'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 const WEEKDAYS_SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
+// Полупрозрачные заливки: на светлом фоне выглядят как пастель,
+// на тёмном — как приглушённый оттенок того же цвета.
 const DAY_COLORS: Record<string, string> = {
-    working: '#e8f5e9',
-    holiday: '#ffebee',
-    shortened: '#fff3e0',
+    working: 'rgba(76,175,80,0.20)',
+    holiday: 'rgba(244,67,54,0.20)',
+    shortened: 'rgba(255,152,0,0.22)',
 };
 
 const CalendarEditor: React.FC<CalendarEditorProps> = ({
@@ -172,10 +174,12 @@ const CalendarEditor: React.FC<CalendarEditorProps> = ({
                             {d}
                         </Typography>
                         {weekNum && (
-                            <Typography variant="caption" sx={{
+                            <Typography variant="caption" sx={(theme) => ({
                                 fontSize: '0.5rem', lineHeight: 1,
-                                color: weekNum === 1 ? '#1565c0' : '#c62828',
-                            }}>
+                                color: theme.palette.mode === 'dark'
+                                    ? (weekNum === 1 ? '#64b5f6' : '#ef9a9a')
+                                    : (weekNum === 1 ? '#1565c0' : '#c62828'),
+                            })}>
                                 {weekNum === 1 ? 'I' : 'II'}
                             </Typography>
                         )}
