@@ -197,7 +197,7 @@ const LoginPage: React.FC = () => {
                                 variant="body2"
                                 sx={{ mt: 1.5, color: 'text.secondary' }}
                             >
-                                Задачи, расписание и мероприятия — в одном месте
+                                Задачи, расписание и мероприятия в одном месте
                             </Typography>
                         </Box>
 
