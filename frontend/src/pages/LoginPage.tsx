@@ -11,6 +11,7 @@ import {
     Tab,
     Alert,
     CircularProgress,
+    useTheme,
 } from '@mui/material';
 import { useAppDispatch } from '../hooks/useRedux';
 import { loginStart, loginSuccess, loginFailure } from '../store/slices/authSlice';
@@ -29,6 +30,8 @@ const extractLoginError = (err: any): string => {
 };
 
 const LoginPage: React.FC = () => {
+    const theme = useTheme();
+    const isDark = theme.palette.mode === 'dark';
     const [tabValue, setTabValue] = useState(0);
     const [fullName, setFullName] = useState('');
     const [schoolPassword, setSchoolPassword] = useState('');
@@ -135,24 +138,70 @@ const LoginPage: React.FC = () => {
 
     return (
         <>
-            <Container maxWidth="sm">
-                <Box
-                    sx={{
-                        minHeight: '100vh',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                    }}
-                >
-                    <Paper elevation={3} sx={{ p: 4, width: '100%' }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
-                            <img
-                                src="/plantakt-logo.png"
+            {/* Фон страницы: мягкое свечение, чтобы белая карточка входа
+                не висела на пустом листе. */}
+            <Box
+                sx={{
+                    minHeight: '100vh',
+                    display: 'flex',
+                    alignItems: 'center',
+                    py: { xs: 4, sm: 6 },
+                    background: isDark
+                        ? 'radial-gradient(1200px 600px at 50% -10%, rgba(91,141,239,0.18) 0%, rgba(0,0,0,0) 60%), linear-gradient(180deg, #12141a 0%, #171a21 100%)'
+                        : 'radial-gradient(1200px 600px at 50% -10%, rgba(91,141,239,0.22) 0%, rgba(255,255,255,0) 60%), linear-gradient(180deg, #f4f7ff 0%, #eef2fa 100%)',
+                }}
+            >
+                <Container maxWidth="sm">
+                    <Paper
+                        elevation={0}
+                        sx={{
+                            width: '100%',
+                            borderRadius: 4,
+                            overflow: 'hidden',
+                            border: '1px solid',
+                            borderColor: 'divider',
+                            boxShadow: isDark
+                                ? '0 24px 60px rgba(0,0,0,0.55)'
+                                : '0 24px 60px rgba(31,54,110,0.14)',
+                        }}
+                    >
+                        {/* Шапка с логотипом. Верхняя грань знака почти белая,
+                            поэтому кладём его на слегка подкрашенную подложку —
+                            на чистом белом фоне она бы просто исчезла. */}
+                        <Box
+                            sx={{
+                                px: 4,
+                                pt: { xs: 4, sm: 5 },
+                                pb: { xs: 3, sm: 3.5 },
+                                textAlign: 'center',
+                                background: isDark
+                                    ? 'linear-gradient(180deg, rgba(91,141,239,0.16) 0%, rgba(91,141,239,0) 100%)'
+                                    : 'linear-gradient(180deg, #e9f0ff 0%, rgba(233,240,255,0) 100%)',
+                            }}
+                        >
+                            <Box
+                                component="img"
+                                src={isDark ? '/plantakt-logo-dark.png' : '/plantakt-logo.png'}
                                 alt="ПланТакт"
-                                style={{ height: 56, objectFit: 'contain' }}
+                                sx={{
+                                    display: 'block',
+                                    mx: 'auto',
+                                    height: { xs: 44, sm: 54 },
+                                    width: 'auto',
+                                    maxWidth: '100%',
+                                    objectFit: 'contain',
+                                    userSelect: 'none',
+                                }}
                             />
+                            <Typography
+                                variant="body2"
+                                sx={{ mt: 1.5, color: 'text.secondary' }}
+                            >
+                                Задачи, расписание и мероприятия — в одном месте
+                            </Typography>
                         </Box>
 
+                        <Box sx={{ px: { xs: 3, sm: 4 }, pb: { xs: 3, sm: 4 } }}>
                         <Tabs
                             value={tabValue}
                             onChange={handleTabChange}
@@ -243,9 +292,10 @@ const LoginPage: React.FC = () => {
                                 </Button>
                             </form>
                         )}
+                        </Box>
                     </Paper>
-                </Box>
-            </Container>
+                </Container>
+            </Box>
 
             {/* Диалог выбора ролей */}
             <RoleSelectionDialog
