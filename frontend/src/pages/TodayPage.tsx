@@ -133,8 +133,8 @@ const TodayPage: React.FC = () => {
             }
 
             celebrate({
-                variant: 'complete',
-                message: 'План на сегодня выполнен!',
+                variant: 'plan',
+                message: 'План на сегодня выполнен',
                 subtitle:
                     data.total === 1
                         ? 'Задача закрыта. Отличная работа!'

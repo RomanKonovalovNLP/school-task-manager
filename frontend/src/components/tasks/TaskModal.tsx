@@ -165,7 +165,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ onRefresh }) => {
             // остаются со старыми данными (и не срабатывает поздравление за весь день)
             onRefresh();
             if (result.completed) {
-                celebrate({ variant: 'complete', message: 'Поздравляем, задача выполнена!' });
+                celebrate({ variant: 'complete', message: 'Задача успешно выполнена' });
             }
         } catch (error: any) {
             alert(error.response?.data?.message || 'Ошибка при изменении статуса');

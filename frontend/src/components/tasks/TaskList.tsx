@@ -148,7 +148,7 @@ const TaskList: React.FC<TaskListProps> = ({ onRefresh }) => {
         try {
             const res = await tasksService.toggleCompletion(task.id);
             if (res.completed) {
-                celebrate({ variant: 'complete', message: 'Поздравляем, задача выполнена!' });
+                celebrate({ variant: 'complete', message: 'Задача успешно выполнена' });
             }
             onRefresh();
         } catch {

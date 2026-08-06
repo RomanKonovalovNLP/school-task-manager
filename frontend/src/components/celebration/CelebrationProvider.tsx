@@ -1,10 +1,13 @@
 import React, { createContext, useCallback, useContext, useState } from 'react';
-import MascotCelebration, { CelebrationVariant } from './MascotCelebration';
+import SuccessCelebration, { CelebrationVariant, CelebrationLines } from './MascotCelebration';
 
 interface CelebrationOptions {
+    /** Текст для скринридеров (и запасной вариант, если строки не заданы) */
     message: string;
     subtitle?: string;
     variant?: CelebrationVariant;
+    /** Три строки подписи: обычная / выделенная / обычная */
+    lines?: CelebrationLines;
 }
 
 const CelebrationContext = createContext<(o: CelebrationOptions) => void>(() => {});
@@ -27,12 +30,13 @@ export const CelebrationProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return (
         <CelebrationContext.Provider value={celebrate}>
             {children}
-            <MascotCelebration
+            <SuccessCelebration
                 key={state.key}
                 open={state.open}
                 message={state.opts.message}
                 subtitle={state.opts.subtitle}
                 variant={state.opts.variant}
+                lines={state.opts.lines}
                 onClose={handleClose}
             />
         </CelebrationContext.Provider>

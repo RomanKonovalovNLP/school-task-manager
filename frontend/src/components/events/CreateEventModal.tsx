@@ -247,7 +247,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
 
             onSuccess();
             handleClose();
-            celebrate({ variant: 'event', message: 'Мероприятие успешно создано!' });
+            celebrate({ variant: 'event', message: 'Мероприятие успешно создано' });
         } catch (err: any) {
             setError(err.response?.data?.message || 'Ошибка при сохранении мероприятия');
         } finally {

@@ -136,7 +136,7 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
             dispatch(addTask(newTask));
             onSuccess();
             handleClose();
-            celebrate({ variant: 'task', message: 'Задача успешно создана!' });
+            celebrate({ variant: 'task', message: 'Задача успешно создана' });
         } catch (err: any) {
             const msg = err.response?.data?.message;
             setError(
