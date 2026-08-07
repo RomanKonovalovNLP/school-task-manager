@@ -12,7 +12,11 @@ import {
     Alert,
     CircularProgress,
     useTheme,
+    IconButton,
+    Tooltip,
 } from '@mui/material';
+import { Brightness4, Brightness7 } from '@mui/icons-material';
+import { useColorMode } from '../theme/colorMode';
 import { useAppDispatch } from '../hooks/useRedux';
 import { loginStart, loginSuccess, loginFailure } from '../store/slices/authSlice';
 import { authService } from '../services/auth.service';
@@ -31,6 +35,7 @@ const extractLoginError = (err: any): string => {
 
 const LoginPage: React.FC = () => {
     const theme = useTheme();
+    const colorMode = useColorMode();
     const isDark = theme.palette.mode === 'dark';
     const [tabValue, setTabValue] = useState(0);
     const [fullName, setFullName] = useState('');
@@ -142,6 +147,7 @@ const LoginPage: React.FC = () => {
                 не висела на пустом листе. */}
             <Box
                 sx={{
+                    position: 'relative',
                     minHeight: '100vh',
                     display: 'flex',
                     alignItems: 'center',
@@ -151,6 +157,29 @@ const LoginPage: React.FC = () => {
                         : 'radial-gradient(1200px 600px at 50% -10%, rgba(91,141,239,0.22) 0%, rgba(255,255,255,0) 60%), linear-gradient(180deg, #f4f7ff 0%, #eef2fa 100%)',
                 }}
             >
+                {/* Переключатель темы доступен и до входа: иначе пользователь
+                    заперт в теме, которая осталась от прошлого сеанса. */}
+                <Tooltip title={isDark ? 'Светлая тема' : 'Тёмная тема'}>
+                    <IconButton
+                        onClick={colorMode.toggle}
+                        aria-label={isDark ? 'Включить светлую тему' : 'Включить тёмную тему'}
+                        sx={{
+                            position: 'absolute',
+                            top: { xs: 12, sm: 20 },
+                            right: { xs: 12, sm: 20 },
+                            color: 'text.secondary',
+                            bgcolor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.7)',
+                            border: '1px solid',
+                            borderColor: 'divider',
+                            '&:hover': {
+                                bgcolor: isDark ? 'rgba(255,255,255,0.12)' : '#fff',
+                            },
+                        }}
+                    >
+                        {isDark ? <Brightness7 /> : <Brightness4 />}
+                    </IconButton>
+                </Tooltip>
+
                 <Container maxWidth="sm">
                     <Paper
                         elevation={0}
