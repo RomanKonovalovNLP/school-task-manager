@@ -11,6 +11,13 @@
   <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap" />
   <title>ПланТакт</title>
+
+  <!-- Yandex.RTB: загрузчик ставится один раз на страницу и обслуживает все
+       рекламные блоки. Очередь yaContextCb нужна потому, что context.js
+       грузится асинхронно: блоки складывают в неё свои вызовы render,
+       а скрипт выполняет их, когда будет готов. -->
+  <script>window.yaContextCb = window.yaContextCb || []</script>
+  <script src="https://yandex.ru/ads/system/context.js" async></script>
 </head>
 
 <body>

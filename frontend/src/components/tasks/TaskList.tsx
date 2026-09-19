@@ -29,6 +29,17 @@ import { tasksService, TaskGroup } from '../../services/tasks.service';
 import { Task } from '../../types';
 import { isTaskDoneFor } from '../../utils/taskHelpers';
 import { useCelebration } from '../celebration/CelebrationProvider';
+import YandexAd from '../ads/YandexAd';
+import { AD_BLOCK_TASKS_FEED } from '../../config/ads';
+
+/**
+ * Место рекламной карточки в сетке задач. Задачам раздаём чётные порядковые
+ * номера (0, 2, 4, …), поэтому нечётное значение ставит объявление между
+ * третьей и четвёртой задачей: первый экран остаётся за задачами.
+ * Пока объявления нет, карточка уезжает в самый конец и не оставляет дыры.
+ */
+const AD_ORDER = 5;
+const AD_ORDER_HIDDEN = 100000;
 
 interface TaskListProps {
     onRefresh: () => void;
@@ -66,6 +77,10 @@ const TaskList: React.FC<TaskListProps> = ({ onRefresh }) => {
     const [groups, setGroups] = useState<TaskGroup[]>([]);
     const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
     const [menuTask, setMenuTask] = useState<Task | null>(null);
+    // Пока объявления нет, рекламная карточка не должна оставлять пустую
+    // клетку в сетке, поэтому её место определяется этим флагом.
+    const [adVisible, setAdVisible] = useState(false);
+    const handleAdShown = useCallback(() => setAdVisible(true), []);
 
     const loadGroups = useCallback(async () => {
         try { setGroups(await tasksService.getGroups()); } catch { /* ignore */ }
@@ -216,12 +231,12 @@ const TaskList: React.FC<TaskListProps> = ({ onRefresh }) => {
         catch { setSnackbar({ open: true, message: 'Не удалось удалить группу', severity: 'error' }); }
     };
 
-    const renderGrid = (list: Task[]) => (
+    const renderGrid = (list: Task[], withAd = false) => (
         <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 2, alignItems: 'stretch' }}>
-            {list.map((task) => (
+            {list.map((task, index) => (
                 <Box
                     key={task.id}
-                    sx={{ height: '100%' }}
+                    sx={{ height: '100%', order: index * 2 }}
                     onTouchStart={isMobile ? handleTouchStart : undefined}
                     onTouchEnd={isMobile ? (e) => handleTouchEnd(e, task.id) : undefined}
                 >
@@ -239,6 +254,15 @@ const TaskList: React.FC<TaskListProps> = ({ onRefresh }) => {
                     />
                 </Box>
             ))}
+            {withAd && (
+                <Box sx={{ height: '100%', order: adVisible ? AD_ORDER : AD_ORDER_HIDDEN }}>
+                    <YandexAd
+                        blockId={AD_BLOCK_TASKS_FEED}
+                        variant="card"
+                        onAdShown={handleAdShown}
+                    />
+                </Box>
+            )}
         </Box>
     );
 
@@ -304,7 +328,7 @@ const TaskList: React.FC<TaskListProps> = ({ onRefresh }) => {
             </Menu>
 
             {!grouped ? (
-                renderGrid(visibleTasks)
+                renderGrid(visibleTasks, true)
             ) : (
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                     {groups.map((g) => {
@@ -333,7 +357,7 @@ const TaskList: React.FC<TaskListProps> = ({ onRefresh }) => {
                         </Box>
                         {ungroupedTasks.length === 0
                             ? <Typography variant="body2" color="text.secondary" sx={{ pl: 4 }}>Все задачи распределены по группам.</Typography>
-                            : renderGrid(ungroupedTasks)}
+                            : renderGrid(ungroupedTasks, true)}
                     </Box>
                 </Box>
             )}

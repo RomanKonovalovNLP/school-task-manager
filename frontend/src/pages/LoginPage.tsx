@@ -17,6 +17,8 @@ import {
 } from '@mui/material';
 import { Brightness4, Brightness7 } from '@mui/icons-material';
 import { useColorMode } from '../theme/colorMode';
+import YandexAd from '../components/ads/YandexAd';
+import { AD_BLOCK_LOGIN } from '../config/ads';
 import { useAppDispatch } from '../hooks/useRedux';
 import { loginStart, loginSuccess, loginFailure } from '../store/slices/authSlice';
 import { authService } from '../services/auth.service';
@@ -323,6 +325,13 @@ const LoginPage: React.FC = () => {
                         )}
                         </Box>
                     </Paper>
+
+                    {/* Реклама под карточкой: не мешает вводу логина и пароля,
+                        по ширине совпадает с формой. Если объявления нет,
+                        блок не занимает места. */}
+                    <Box sx={{ mt: 3 }}>
+                        <YandexAd blockId={AD_BLOCK_LOGIN} />
+                    </Box>
                 </Container>
             </Box>
 
